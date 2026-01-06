@@ -49,7 +49,8 @@ permissions:
   contents: write
 
 jobs:
-  bump-and-tag:
+  version-and-tag:
+    name: Set version and create tag
     runs-on: ubuntu-latest
 
     steps:
