@@ -1,0 +1,148 @@
+# ===========================================================
+#  Reusable Workflow: Set version and create tag
+#
+#  PURPOSE:
+#    This reusable (callable) workflow performs version stamping
+#    and tagging for a repository. It:
+#
+#      1. Writes the provided version string into the VERSION file
+#      2. Optionally commits the VERSION file to the main branch
+#      3. Optionally creates and pushes a Git tag named v<version>
+#
+#  HOW IT IS USED:
+#    - This workflow is NOT run directly from the Actions UI.
+#    - It is invoked via `workflow_call` by a wrapper workflow
+#      (typically named `release.yml`) in the calling repository.
+#
+#  INPUTS (via workflow_call):
+#    - version (string):
+#        The version value to write into the VERSION file
+#        (e.g. 4.1.2, 4.1.2-RC1, 2025.01.03).
+#
+#    - perform_release (boolean):
+#        false → Dry-run (no commit, no tag)
+#        true  → Commit VERSION and create tag v<version>
+#
+#  BEHAVIOR:
+#    - Always operates on the `main` branch
+#    - Tag creation fails if the tag already exists
+#    - Requires `contents: write` permissions from the caller
+#
+# ===========================================================
+
+name: Set version and create tag
+
+on:
+  # Manual trigger from the Actions UI
+  workflow_call:
+    inputs:
+      version:
+        description: "Version string (e.g., 4.1.2, 4.1.2-RC1)"
+        required: true
+        type: string
+      perform_release:
+        description: "If true, commit VERSION and create tag"
+        required: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # -------------------------------------------------------
+      # SAFETY CHECK: Only allow running on MAIN
+      #
+      # Prevents accidental version bumps on feature branches.
+      # -------------------------------------------------------
+      - name: Ensure workflow is run on MAIN
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "ERROR: This workflow may only be run on main."
+          echo "You selected: $GITHUB_REF"
+          exit 1
+
+      # -------------------------------------------------------
+      # Checkout MAIN explicitly so all writes occur there
+      # -------------------------------------------------------
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Needed for tag operations
+          ref: main        # Always operate on MAIN
+
+      # -------------------------------------------------------
+      # Write the provided version string into the VERSION file.
+      #
+      # This ALWAYS happens, even in test mode.
+      #
+      # The wrapper workflow determines whether this change is
+      # committed or not.
+      # -------------------------------------------------------
+      - name: Update VERSION
+        run: |
+          echo "${{ inputs.version }}" > VERSION
+          echo "VERSION set to: $(cat VERSION)"
+
+      # -------------------------------------------------------
+      # Configure the GitHub Actions bot identity for committing
+      # -------------------------------------------------------
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # -------------------------------------------------------
+      # Commit the VERSION file
+      #
+      # ONLY occurs if perform_release == "Yes (commit + tag)".
+      # Otherwise, it's a dry-run.
+      # -------------------------------------------------------
+      - name: Commit VERSION file
+        if: inputs.perform_release
+        run: |
+          git add VERSION
+          git commit -m "Set version to ${{ inputs.version }}" || \
+            echo "No changes to commit"
+
+      # -------------------------------------------------------
+      # Push the commit to MAIN
+      #
+      # ONLY in release mode.
+      # -------------------------------------------------------
+      - name: Push commit
+        if: inputs.perform_release
+        run: |
+          git push origin HEAD:main
+
+      # -------------------------------------------------------
+      # Create and push the Git tag "v<version>"
+      #
+      # ONLY in release mode.
+      #
+      # Safety check prevents overwriting an existing tag.
+      # -------------------------------------------------------
+      - name: Create and push tag
+        if: inputs.perform_release
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG="v${VERSION}"
+
+          # Prevent duplicate tags
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "ERROR: Tag $TAG already exists."
+            exit 1
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created and pushed tag $TAG"
+          
+          
+          
+          
+          
