@@ -1,0 +1,118 @@
+name: Reusable Create Release PR
+
+# This workflow automates the creation of release pull requests.
+# It creates a new branch (release-v<version>), updates the VERSION file,
+# commits the change, and opens a PR to main.
+#
+# Behavior:
+# - If VERSION already matches the requested version → exits successfully (no-op)
+# - If an open PR already exists for this version → exits successfully (no-op)
+# - If the release branch exists but no PR exists → creates PR from existing branch
+# - If the release branch doesn't exist → creates branch, updates VERSION, and creates PR
+# - Supports standard versions (1.2.3) and pre-release versions (1.2.3-RC1)
+# - Fails if a tag for this version already exists
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.2.3 or 1.2.3-RC1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if VERSION already matches
+        id: version_check
+        run: |
+          if [ -f VERSION ]; then
+            CURRENT_VERSION=$(cat VERSION)
+            if [ "$CURRENT_VERSION" = "${{ inputs.version }}" ]; then
+              echo "VERSION file already contains ${{ inputs.version }}. No changes needed."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Check if branch exists
+        if: steps.version_check.outputs.skip != 'true'
+        id: branch_check
+        run: |
+          if git ls-remote --exit-code --heads origin release-v${{ inputs.version }} > /dev/null 2>&1; then
+            echo "Branch release-v${{ inputs.version }} already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if PR already exists
+        if: steps.version_check.outputs.skip != 'true'
+        id: pr_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_EXISTS=$(gh pr list --head release-v${{ inputs.version }} --base main --state open --json number --jq 'length')
+          if [ "$PR_EXISTS" -gt 0 ]; then
+            echo "Pull request from release-v${{ inputs.version }} to main already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "exists=false" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          if git ls-remote --exit-code --tags origin v${{ inputs.version }} > /dev/null 2>&1; then
+            echo "Error: Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Configure git
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release branch
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git checkout -b release-v${{ inputs.version }}
+
+      - name: Update VERSION file
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          echo "${{ inputs.version }}" > VERSION
+          git add VERSION
+
+      - name: Commit version bump
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git commit -m "Bump version to ${{ inputs.version }}"
+
+      - name: Push release branch
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git push origin release-v${{ inputs.version }}
+
+      - name: Create Pull Request
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --title "Release v${{ inputs.version }}" \
+            --body "Automated release PR for version ${{ inputs.version }}" \
+            --base main \
+            --head release-v${{ inputs.version }}

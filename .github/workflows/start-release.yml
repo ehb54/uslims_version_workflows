@@ -1,0 +1,19 @@
+name: Start Release
+
+# Manually triggered workflow that initiates the release PR creation process.
+# Prompts for a version number and delegates to the reusable release workflow.
+# Supports standard versions (1.2.3) and pre-release versions (1.2.3-RC1).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.2.3 or 1.2.3-RC1)'
+        required: true
+        type: string
+
+jobs:
+  create-release-pr:
+    uses: uslims_version_workflows/.github/workflows/create-release-pr.yml@main
+    with:
+      version: ${{ inputs.version }}
