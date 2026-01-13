@@ -14,6 +14,6 @@ on:
 
 jobs:
   create-release-pr:
-    uses: uslims_version_workflows/.github/workflows/create-release-pr.yml@main
+    uses: ehb54/uslims_version_workflows/.github/workflows/create-release-pr.yml@main
     with:
       version: ${{ inputs.version }}
