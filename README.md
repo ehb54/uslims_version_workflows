@@ -1,32 +1,47 @@
-# Reusable GitHub Actions Workflows
+# GitHub Actions – Release Workflows
 
-This repository hosts reusable GitHub Actions workflows intended to be
-called from other repositories via `workflow_call`.
+This repository provides reusable GitHub Actions workflows for creating
+versioned release pull requests.
 
 ## Workflows
 
-### set-version-tag.yml
+### `create-release-pr.yml`
 
-Reusable workflow that:
-- Writes a provided version string to a `VERSION` file
-- Optionally commits the file to `main`
-- Optionally creates and pushes a tag `v<version>`
+Reusable workflow invoked via `workflow_call`.
 
-Inputs:
-- `version` (string)
-- `perform_release` (boolean)
+**What it does**
+- Creates (or reuses) a `release-v<version>` branch
+- Writes the version to the `VERSION` file
+- Commits the change
+- Opens a pull request to `main`
+- Fails if a tag `v<version>` already exists
 
-`perform_release = false` → dry-run  
-`perform_release = true`  → commit + tag
+**Inputs**
+- `version` (string, required)  
+  Examples: `1.2.3`, `1.2.3-RC1`
 
-### release.yml (example)
+---
 
-Example dispatcher workflow showing how a repository can provide a manual UI
-(`workflow_dispatch`) and call `set-version-tag.yml`.
+### `start-release.yml`
 
-This file is included as a reference and may be copied into other repositories.
+Manually triggered dispatcher workflow (`workflow_dispatch`).
 
-## Notes
+**What it does**
+- Prompts for a version number
+- Calls `create-release-pr.yml`
 
-- This repository must remain public for reuse from private repos
-- All operations target the `main` branch
+This file is intended to be copied into consuming repositories to provide
+a simple “Start Release” button in GitHub.
+
+---
+
+## Usage
+
+From another repository:
+
+```yaml
+jobs:
+  release:
+    uses: ehb54/uslims_version_workflows/.github/workflows/create-release-pr.yml@full-sha
+    with:
+      version: String

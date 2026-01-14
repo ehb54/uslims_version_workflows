@@ -1,4 +1,4 @@
-name: Reusable Create Release PR
+name: Create Release PR
 
 # This workflow automates the creation of release pull requests.
 # It creates a new branch (release-v<version>), updates the VERSION file,
