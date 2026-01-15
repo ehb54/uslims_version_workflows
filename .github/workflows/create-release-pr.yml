@@ -1,4 +1,4 @@
-name: Create Release PR
+name: Create Bump Version PR
 
 # This workflow automates the creation of bump-to-version pull requests.
 # It creates a new branch (bump-to-v<version>), updates the VERSION file,
@@ -7,8 +7,8 @@ name: Create Release PR
 # Behavior:
 # - If VERSION already matches the requested version → exits successfully (no-op)
 # - If an open PR already exists for this version → exits successfully (no-op)
-# - If the release branch exists but no PR exists → creates PR from existing branch
-# - If the release branch doesn't exist → creates branch, updates VERSION, and creates PR
+# - If the bump-to branch exists but no PR exists → creates PR from existing branch
+# - If the bump-to branch doesn't exist → creates branch, updates VERSION, and creates PR
 # - Supports standard versions (1.2.3) and pre-release versions (1.2.3-RC1)
 # - Fails if a tag for this version already exists
 
@@ -25,7 +25,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  create-release-pr:
+  create-bump-to-pr:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -85,7 +85,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create pre-release branch
+      - name: Create bump-to branch
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
         run: |
           git checkout -b bump-to-v${{ inputs.version }}
