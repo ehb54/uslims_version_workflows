@@ -1,7 +1,7 @@
 name: Create Release PR
 
-# This workflow automates the creation of release pull requests.
-# It creates a new branch (release-v<version>), updates the VERSION file,
+# This workflow automates the creation of bump-to-version pull requests.
+# It creates a new branch (bump-to-v<version>), updates the VERSION file,
 # commits the change, and opens a PR to main.
 #
 # Behavior:
@@ -50,8 +50,8 @@ jobs:
         if: steps.version_check.outputs.skip != 'true'
         id: branch_check
         run: |
-          if git ls-remote --exit-code --heads origin release-v${{ inputs.version }} > /dev/null 2>&1; then
-            echo "Branch release-v${{ inputs.version }} already exists"
+          if git ls-remote --exit-code --heads origin bump-to-v${{ inputs.version }} > /dev/null 2>&1; then
+            echo "Branch bump-to-v${{ inputs.version }} already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
@@ -63,9 +63,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PR_EXISTS=$(gh pr list --head release-v${{ inputs.version }} --base main --state open --json number --jq 'length')
+          PR_EXISTS=$(gh pr list --head bump-to-v${{ inputs.version }} --base main --state open --json number --jq 'length')
           if [ "$PR_EXISTS" -gt 0 ]; then
-            echo "Pull request from release-v${{ inputs.version }} to main already exists"
+            echo "Pull request from bump-to-v${{ inputs.version }} to main already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -85,10 +85,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch
+      - name: Create pre-release branch
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
         run: |
-          git checkout -b release-v${{ inputs.version }}
+          git checkout -b bump-to-v${{ inputs.version }}
 
       - name: Update VERSION file
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
@@ -101,10 +101,10 @@ jobs:
         run: |
           git commit -m "Bump version to ${{ inputs.version }}"
 
-      - name: Push release branch
+      - name: Push bump branch
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
         run: |
-          git push origin release-v${{ inputs.version }}
+          git push origin bump-to-v${{ inputs.version }}
 
       - name: Create Pull Request
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
@@ -112,7 +112,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr create \
-            --title "Release v${{ inputs.version }}" \
-            --body "Automated release PR for version ${{ inputs.version }}" \
+            --title "Bump to v${{ inputs.version }}" \
+            --body "Automated PR for bump to version ${{ inputs.version }}" \
             --base main \
-            --head release-v${{ inputs.version }}
+            --head bump-to-v${{ inputs.version }}
