@@ -1,5 +1,17 @@
 name: Create Bump Version PR
 
+# This workflow automates the creation of bump-to-version pull requests.
+# It creates a new branch (bump-to-v<version>), updates the VERSION file,
+# commits the change, and opens a PR to main.
+#
+# Behavior:
+# - If VERSION already matches the requested version → exits successfully (no-op)
+# - If an open PR already exists for this version → exits successfully (no-op)
+# - If the bump-to branch exists but no PR exists → creates PR from existing branch
+# - If the bump-to branch doesn't exist → creates branch, updates VERSION, and creates PR
+# - Supports standard versions (1.2.3) and pre-release versions (1.2.3-RC1)
+# - Fails if a tag for this version already exists
+
 on:
   workflow_call:
     inputs:
@@ -21,82 +33,54 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute desired version + sanity check
-        id: desired
-        run: |
-          set -euo pipefail
-          DESIRED="${{ inputs.version }}"
-          if [ -z "$DESIRED" ]; then
-            echo "Error: inputs.version is empty"
-            exit 1
-          fi
-          echo "version=$DESIRED" >> "$GITHUB_OUTPUT"
-
-      - name: Check if VERSION and utils/us_defines.h already match
+      - name: Check if VERSION already matches
         id: version_check
         run: |
           set -euo pipefail
-          DESIRED="${{ steps.desired.outputs.version }}"
 
-          # Check VERSION
-          VERSION_MATCH=false
+          # Default behavior: same as before (VERSION-only)
+          SKIP=false
+
           if [ -f VERSION ]; then
-            CURRENT_VERSION="$(cat VERSION | tr -d '\r\n')"
-            if [ "$CURRENT_VERSION" = "$DESIRED" ]; then
-              VERSION_MATCH=true
+            CURRENT_VERSION=$(cat VERSION | tr -d '\r\n')
+            if [ "$CURRENT_VERSION" = "${{ inputs.version }}" ]; then
+              SKIP=true
             fi
           fi
 
-          # Check utils/us_defines.h
-          DEFINES_MATCH=false
-          if [ -f utils/us_defines.h ]; then
-            # Extract the string inside QString("...") for US_Version
+          # ultrascan3-only: require utils/us_defines.h to match too
+          if [ "${GITHUB_REPOSITORY}" = "ehb54/ultrascan3" ]; then
+            if [ ! -f utils/us_defines.h ]; then
+              echo "Error: utils/us_defines.h not found in ehb54/ultrascan3"
+              exit 1
+            fi
+
             CURRENT_DEFINE="$(grep -E '^[[:space:]]*#define[[:space:]]+US_Version[[:space:]]+QString\("' utils/us_defines.h \
               | sed -E 's/.*QString\("([^"]*)"\).*/\1/' | head -n 1 | tr -d '\r\n')"
 
-            if [ "${CURRENT_DEFINE:-}" = "$DESIRED" ]; then
-              DEFINES_MATCH=true
+            if [ "${CURRENT_DEFINE:-}" != "${{ inputs.version }}" ]; then
+              SKIP=false
             fi
           fi
 
-          echo "version_match=$VERSION_MATCH" >> "$GITHUB_OUTPUT"
-          echo "defines_match=$DEFINES_MATCH" >> "$GITHUB_OUTPUT"
-
-          if [ "$VERSION_MATCH" = "true" ] && [ "$DEFINES_MATCH" = "true" ]; then
-            echo "Both VERSION and utils/us_defines.h already match $DESIRED. No changes needed."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          if [ "$SKIP" = "true" ]; then
+            echo "Version already matches. No changes needed."
+            echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Check if tag exists
-        if: steps.version_check.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --tags origin v${{ steps.desired.outputs.version }} > /dev/null 2>&1; then
-            echo "Error: Tag v${{ steps.desired.outputs.version }} already exists"
-            exit 1
-          fi
-
-      - name: Configure git
-        if: steps.version_check.outputs.skip != 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Check if branch exists
         if: steps.version_check.outputs.skip != 'true'
         id: branch_check
         run: |
-          set -euo pipefail
-          BR="bump-to-v${{ steps.desired.outputs.version }}"
-          if git ls-remote --exit-code --heads origin "$BR" > /dev/null 2>&1; then
+          if git ls-remote --exit-code --heads origin bump-to-v${{ inputs.version }} > /dev/null 2>&1; then
+            echo "Branch bump-to-v${{ inputs.version }} already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
-          echo "branch=$BR" >> $GITHUB_OUTPUT
 
       - name: Check if PR already exists
         if: steps.version_check.outputs.skip != 'true'
@@ -104,76 +88,75 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          BR="${{ steps.branch_check.outputs.branch }}"
-          PR_EXISTS=$(gh pr list --head "$BR" --base main --state open --json number --jq 'length')
+          PR_EXISTS=$(gh pr list --head bump-to-v${{ inputs.version }} --base main --state open --json number --jq 'length')
           if [ "$PR_EXISTS" -gt 0 ]; then
-            echo "Pull request from $BR to main already exists"
+            echo "Pull request from bump-to-v${{ inputs.version }} to main already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           echo "exists=false" >> $GITHUB_OUTPUT
 
-      - name: Create or checkout bump branch
-        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
+      - name: Check if tag exists
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
         run: |
-          set -euo pipefail
-          BR="${{ steps.branch_check.outputs.branch }}"
-          if [ "${{ steps.branch_check.outputs.exists }}" = "true" ]; then
-            git fetch origin "$BR":"$BR"
-            git checkout "$BR"
-          else
-            git checkout -b "$BR"
-          fi
-
-      - name: Update VERSION + utils/us_defines.h (US_Version)
-        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
-        run: |
-          set -euo pipefail
-          DESIRED="${{ steps.desired.outputs.version }}"
-
-          # Update VERSION
-          echo "$DESIRED" > VERSION
-
-          # Update utils/us_defines.h
-          if [ ! -f utils/us_defines.h ]; then
-            echo "Error: utils/us_defines.h not found"
+          if git ls-remote --exit-code --tags origin v${{ inputs.version }} > /dev/null 2>&1; then
+            echo "Error: Tag v${{ inputs.version }} already exists"
             exit 1
           fi
 
-          # Ensure exactly one US_Version define exists
-          COUNT="$(grep -cE '^[[:space:]]*#define[[:space:]]+US_Version[[:space:]]+QString\("' utils/us_defines.h || true)"
-          if [ "$COUNT" -ne 1 ]; then
-            echo "Error: expected exactly 1 US_Version define, found $COUNT"
-            exit 1
-          fi
+      - name: Configure git
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Replace the QString("...") contents
-          perl -0777 -i -pe 's/^(\s*#define\s+US_Version\s+QString\(")[^"]*("\).*)$/${1}'"$DESIRED"'${2}/m' utils/us_defines.h
+      - name: Create bump-to branch
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git checkout -b bump-to-v${{ inputs.version }}
 
-          git add VERSION utils/us_defines.h
-
-      - name: Commit and push if changed
-        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
+      - name: Update VERSION file
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
         run: |
           set -euo pipefail
-          BR="${{ steps.branch_check.outputs.branch }}"
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Bump version to ${{ steps.desired.outputs.version }}"
-            git push -u origin "$BR"
+
+          echo "${{ inputs.version }}" > VERSION
+          git add VERSION
+
+          # ultrascan3-only: keep US_Version in sync with VERSION
+          if [ "${GITHUB_REPOSITORY}" = "ehb54/ultrascan3" ]; then
+            if [ ! -f utils/us_defines.h ]; then
+              echo "Error: utils/us_defines.h not found in ehb54/ultrascan3"
+              exit 1
+            fi
+
+            COUNT="$(grep -cE '^[[:space:]]*#define[[:space:]]+US_Version[[:space:]]+QString\("' utils/us_defines.h || true)"
+            if [ "$COUNT" -ne 1 ]; then
+              echo "Error: expected exactly 1 US_Version define, found $COUNT"
+              exit 1
+            fi
+
+            perl -0777 -i -pe 's/^(\s*#define\s+US_Version\s+QString\(")[^"]*("\).*)$/${1}'"${{ inputs.version }}"'${2}/m' utils/us_defines.h
+            git add utils/us_defines.h
           fi
 
-      - name: Create Pull Request (if missing)
+      - name: Commit version bump
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git commit -m "Bump version to ${{ inputs.version }}"
+
+      - name: Push bump branch
+        if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true' && steps.branch_check.outputs.exists != 'true'
+        run: |
+          git push origin bump-to-v${{ inputs.version }}
+
+      - name: Create Pull Request
         if: steps.version_check.outputs.skip != 'true' && steps.pr_check.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          BR="${{ steps.branch_check.outputs.branch }}"
           gh pr create \
-            --title "Bump to v${{ steps.desired.outputs.version }}" \
-            --body "Automated PR for bump to version ${{ steps.desired.outputs.version }}" \
+            --title "Bump to v${{ inputs.version }}" \
+            --body "Automated PR for bump to version ${{ inputs.version }}" \
             --base main \
-            --head "$BR"
+            --head bump-to-v${{ inputs.version }}
