@@ -181,15 +181,6 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Determine if this is a pre-release
-          if echo "${{ inputs.version }}" | grep -qE '(-RC|-alpha|-beta|-rc)'; then
-          LABEL="pre-release"
-          VERSION_TYPE="pre-release"
-          else
-          LABEL="release"
-          VERSION_TYPE="release"
-          fi
-          
           # Create the PR with enhanced metadata
           PR_URL=$(gh pr create \
           --title "Bump to v${{ inputs.version }}" \
@@ -209,7 +200,6 @@ jobs:
           *This PR was automatically created by the bump version workflow.*" \
           --base main \
           --head bump-to-v${{ inputs.version }} \
-          --label "automated,version-bump,$LABEL")
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           
