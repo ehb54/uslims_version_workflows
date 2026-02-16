@@ -181,7 +181,14 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Create the PR with enhanced metadata
+          # Determine if this is a pre-release
+          if echo "${{ inputs.version }}" | grep -qE '(-RC|-alpha|-beta|-rc)'; then
+            VERSION_TYPE="pre-release"
+          else
+            VERSION_TYPE="release"
+          fi
+          
+          # Create the PR
           PR_URL=$(gh pr create \
           --title "Bump to v${{ inputs.version }}" \
           --body "Automated version bump to **${{ inputs.version }}**
@@ -199,7 +206,7 @@ jobs:
           ---
           *This PR was automatically created by the bump version workflow.*" \
           --base main \
-          --head bump-to-v${{ inputs.version }} \
+          --head bump-to-v${{ inputs.version }})
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           
@@ -208,38 +215,38 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           
           echo "Created pull request #$PR_NUMBER"
-  
-          - name: Workflow Summary
-            if: always()
-            env:
-              GH_TOKEN: ${{ github.token }}
-            run: |
-              echo "## Version Bump Workflow Results" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              
-              # Status
-              if [ "${{ steps.version_check.outputs.skip }}" = "true" ]; then
-                echo "### Status: No Action Needed" >> $GITHUB_STEP_SUMMARY
-                echo "Version already matches **${{ inputs.version }}**. No changes required." >> $GITHUB_STEP_SUMMARY
-              elif [ "${{ steps.pr_check.outputs.exists }}" = "true" ]; then
-                echo "### Status: PR Already Exists" >> $GITHUB_STEP_SUMMARY
-                PR_NUM="${{ steps.pr_check.outputs.pr_number }}"
-                echo "Pull request [#$PR_NUM](${{ github.server_url }}/${{ github.repository }}/pull/$PR_NUM) already exists for this version." >> $GITHUB_STEP_SUMMARY
-              elif [ "${{ job.status }}" = "failure" ]; then
-                echo "### Status: Workflow Failed" >> $GITHUB_STEP_SUMMARY
-                echo "The version bump workflow encountered an error. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
-              else
-                echo "### Status: PR Created Successfully" >> $GITHUB_STEP_SUMMARY
-                PR_NUM="${{ steps.create_pr.outputs.pr_number }}"
-                if [ -n "$PR_NUM" ]; then
-                  echo "Pull request [#$PR_NUM](${{ github.server_url }}/${{ github.repository }}/pull/$PR_NUM) has been created." >> $GITHUB_STEP_SUMMARY
-                fi
-              fi
-              
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Details" >> $GITHUB_STEP_SUMMARY
-              echo "- **Version:** \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-              echo "- **Requested by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-              echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-              echo "- **Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-              echo "- **Branch:** bump-to-v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Workflow Summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "## Version Bump Workflow Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Status
+          if [ "${{ steps.version_check.outputs.skip }}" = "true" ]; then
+            echo "### Status: No Action Needed" >> $GITHUB_STEP_SUMMARY
+            echo "Version already matches **${{ inputs.version }}**. No changes required." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.pr_check.outputs.exists }}" = "true" ]; then
+            echo "### Status: PR Already Exists" >> $GITHUB_STEP_SUMMARY
+            PR_NUM="${{ steps.pr_check.outputs.pr_number }}"
+            echo "Pull request [#$PR_NUM](${{ github.server_url }}/${{ github.repository }}/pull/$PR_NUM) already exists for this version." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ job.status }}" = "failure" ]; then
+            echo "### Status: Workflow Failed" >> $GITHUB_STEP_SUMMARY
+            echo "The version bump workflow encountered an error. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Status: PR Created Successfully" >> $GITHUB_STEP_SUMMARY
+            PR_NUM="${{ steps.create_pr.outputs.pr_number }}"
+            if [ -n "$PR_NUM" ]; then
+              echo "Pull request [#$PR_NUM](${{ github.server_url }}/${{ github.repository }}/pull/$PR_NUM) has been created." >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Requested by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** bump-to-v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
