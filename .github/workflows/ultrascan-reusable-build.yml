@@ -5,25 +5,35 @@
 # platform-native installer or archive using scripts/build.sh (Linux/macOS)
 # or scripts/build.ps1 via scripts/build.bat (Windows).
 #
-# The build scripts handle all dependency setup themselves when CI=true:
-#   - Linux  : installs missing system packages via apt-get
-#   - macOS  : selects a compatible Xcode version
-#   - All    : bootstraps vcpkg, installs Sphinx if needed
+# WHAT THIS WORKFLOW DOES
+# -----------------------
+# 1. Checkout  - clone the repo at the requested ref
+# 2. Cache     - restore/save the vcpkg binary cache
+# 3. Build     - invoke build.sh or build.bat with CI=true
+# 4. Upload    - publish the platform-native package as a workflow artifact
+#
+# WHAT THIS WORKFLOW DOES NOT DO
+# --------------------------------
+# The build scripts own all build logic and machine setup:
+#   build.sh     → calls bootstrap-deps.sh (Linux apt) or
+#                  bootstrap-macos.sh (Homebrew + Xcode switching);
+#                  then runs vcpkg + CMake + package
+#   build.ps1    → calls bootstrap-windows.ps1 (winget + VS check);
+#                  then runs vcpkg + CMake + package
+#   vcpkg.json   → all library dependencies (Qt, Qwt, OpenSSL, …)
+#
+# Do not add apt/brew/winget/pip calls here. They belong in the bootstrap
+# scripts, and CI=true makes those scripts run non-interactively.
 #
 # INPUTS
 # ------
 # runner          (required)
-#                 GitHub Actions runner label. This also determines the OS
-#                 and architecture.
+#                 GitHub Actions runner label. Determines OS and architecture.
 #                 Examples: ubuntu-24.04, ubuntu-24.04-arm, macos-15,
 #                           macos-15-xlarge (Apple Silicon), windows-2022
 #
 # ref             (optional, default: "main")
 #                 Branch name, tag, or full 40-character commit SHA to build.
-#                 Examples: main, feature/hpc-fix, v4.0.1, a1b2c3d4...
-#                 NOTE: tags are repository-global — a tag cannot exist on
-#                 two branches simultaneously. Use the SHA directly to target
-#                 a specific commit on a branch that has no tag.
 #
 # qt_variant      (optional, default: "qt6")
 #                 Qt/Qwt combination passed to the build script.
@@ -43,7 +53,7 @@
 #                   3  --clean --purge-cache - tier 2 + wipes binary cache
 #
 # artifact_name_prefix  (optional, default: "ultrascan")
-#                 Prefix for the uploaded artifact.
+#                 Prefix for the uploaded artifact name.
 #                 Final name: "<prefix>-<runner>-<profile>-<qt_variant>"
 #
 # artifact_retention_days  (optional, default: 7)
@@ -57,23 +67,23 @@
 #              build/<preset>/UltraScan3-HPC-*-macOS-*.tar.gz  (HPC profile)
 #   Windows -> build/<preset>/UltraScan3-*-Windows.exe
 #
-# EXAMPLE CALLER
-# --------------
+# EXAMPLE CALLERS
+# ---------------
 #   jobs:
 #     build-ubuntu:
-#       uses: ./.github/workflows/us3-build-reusable.yml
+#       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
 #         runner: ubuntu-24.04
 #         qt_variant: qt5-qwt616
 #
 #     build-macos-arm:
-#       uses: ./.github/workflows/us3-build-reusable.yml
+#       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
 #         runner: macos-15-xlarge
 #         qt_variant: qt6
 #
 #     build-windows:
-#       uses: ./.github/workflows/us3-build-reusable.yml
+#       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
 #         runner: windows-2022
 #         qt_variant: qt6
@@ -135,39 +145,73 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      # -----------------------------------------------------------------------
+      # 1. CHECKOUT
+      # Clone at the requested ref. fetch-depth: 1 for speed; if the build
+      # ever needs git history (e.g. for version tagging) increase this.
+      # -----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 1
 
       # -----------------------------------------------------------------------
-      # vcpkg binary cache
-      # Keyed on the runner label (encodes OS, version, arch) and qt_variant,
-      # plus every file that can change the package set.
+      # 2. EXECUTABLE PERMISSIONS
+      # Git preserves the execute bit when the file is committed with it set,
+      # but a safety net here costs nothing and prevents a hard-to-diagnose
+      # failure if a script was ever committed without +x.
+      # This step only applies on Linux/macOS; Windows runners ignore it.
       # -----------------------------------------------------------------------
-      - name: Cache vcpkg
+      - name: Ensure build scripts are executable
+        if: runner.os != 'Windows'
+        shell: bash
+        run: chmod +x scripts/build.sh scripts/bootstrap-deps.sh scripts/bootstrap-macos.sh
+
+      # -----------------------------------------------------------------------
+      # 3. VCPKG BINARY CACHE
+      # Keyed on:
+      #   - runner label      : encodes OS, version, and architecture
+      #   - qt_variant        : different Qt variants install different packages
+      #   - vcpkg.json        : baseline + dependency changes
+      #   - admin/cmake/      : overlay triplets and ports that affect builds
+      #   - CMakeLists.txt    : top-level cmake changes that can affect vcpkg
+      #
+      # Cache paths cover both Unix (~/.vcpkg-cache) and Windows
+      # (C:\Users\runneradmin\.vcpkg-cache) home directory conventions.
+      # ~/vcpkg/downloads is included because vcpkg reuses downloaded source
+      # archives across port rebuilds even when the binary cache is cold.
+      #
+      # Note: vcpkg itself (~/.vcpkg or ~/vcpkg) is NOT cached here.
+      # build.sh / build.ps1 clone vcpkg on first run and the clone is fast.
+      # Caching the full vcpkg directory adds hundreds of MB with little gain
+      # since the binary cache already captures the compiled output.
+      # -----------------------------------------------------------------------
+      - name: Cache vcpkg binary cache and downloads
         uses: actions/cache@v4
         with:
           path: |
             ~/.vcpkg-cache
             ~/vcpkg/downloads
-            ~/vcpkg/packages
-            ~/vcpkg/buildtrees
             C:\Users\runneradmin\.vcpkg-cache
             C:\Users\runneradmin\vcpkg\downloads
-            C:\Users\runneradmin\vcpkg\packages
-            C:\Users\runneradmin\vcpkg\buildtrees
-          key: ${{ inputs.runner }}-${{ inputs.qt_variant }}-vcpkg-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/**', 'CMakeLists.txt', 'cmake/**') }}
+          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            ${{ inputs.runner }}-${{ inputs.qt_variant }}-vcpkg-
-            ${{ inputs.runner }}-vcpkg-
+            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
+            vcpkg-${{ inputs.runner }}-
 
       # -----------------------------------------------------------------------
-      # Build - Linux / macOS
-      # CI=true puts the script into non-interactive mode:
-      #   - Linux : auto-installs any missing system packages via apt-get
-      #   - macOS : auto-selects a compatible Xcode version
-      #   - Both  : bootstraps vcpkg and installs Sphinx without prompting
+      # 4. BUILD — Linux / macOS
+      #
+      # CI=true activates non-interactive mode in build.sh and all bootstrap
+      # scripts it delegates to:
+      #   - bootstrap-deps.sh  (Linux)  : apt-get without prompts
+      #   - bootstrap-macos.sh (macOS)  : brew install without prompts,
+      #                                   fails loudly if CLT absent
+      #   - build.sh itself             : Xcode auto-switch, vcpkg setup,
+      #                                   Sphinx pip install, cmake + package
+      #
+      # Nothing else is needed here. The scripts own all the setup logic.
       # -----------------------------------------------------------------------
       - name: Build (Linux / macOS)
         if: runner.os != 'Windows'
@@ -191,10 +235,20 @@ jobs:
           bash scripts/build.sh "${ARGS[@]}"
 
       # -----------------------------------------------------------------------
-      # Build - Windows
-      # build.bat forwards all args to build.ps1.
-      # CI=true puts the script into non-interactive mode (no prompts,
-      # no interactive Xcode/tool questions).
+      # 4. BUILD — Windows
+      #
+      # CI=true activates non-interactive mode in build.ps1 and all scripts
+      # it delegates to:
+      #   - bootstrap-windows.ps1 : winget installs skipped for CiRequired
+      #                             tools (cmake/git/ninja/nasm already on
+      #                             windows-2022 runner); VS workload verified
+      #   - build.ps1 itself      : vcvarsall activation, vcpkg setup,
+      #                             Sphinx pip install, cmake + NSIS package
+      #
+      # build.bat is a thin CMD wrapper that forwards all arguments to
+      # build.ps1 via: powershell.exe -ExecutionPolicy Bypass -File build.ps1
+      # Using pwsh (PowerShell 7) directly avoids the double-shell hop and
+      # gives us consistent exit code propagation.
       # -----------------------------------------------------------------------
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -214,15 +268,17 @@ jobs:
           $BuildArgs += "--pkg"
           $BuildArgs += "${{ inputs.profile }}"
 
-          Write-Host "Invoking: scripts\build.bat $($BuildArgs -join ' ')"
-          & scripts\build.bat @BuildArgs
+          Write-Host "Invoking: scripts\build.ps1 $($BuildArgs -join ' ')"
+          & scripts\build.ps1 @BuildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # -----------------------------------------------------------------------
-      # Upload the platform-native package.
+      # 5. UPLOAD ARTIFACT
+      #
       # Glob covers all three platforms and both APP and HPC output patterns.
-      # Fails loudly if no matching file is found so a silent packaging
-      # failure is never mistaken for a successful build.
+      # if-no-files-found: error ensures a silent packaging failure is never
+      # mistaken for a successful build — the build step exits 0 but no file
+      # means something went wrong upstream.
       # -----------------------------------------------------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -235,4 +291,3 @@ jobs:
             build/**/UltraScan3-*-Windows.exe
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
-
