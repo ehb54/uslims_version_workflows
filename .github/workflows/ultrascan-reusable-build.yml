@@ -18,6 +18,13 @@
 #                 Examples: ubuntu-24.04, ubuntu-24.04-arm, macos-15,
 #                           macos-15-xlarge (Apple Silicon), windows-2022
 #
+# ref             (optional, default: "main")
+#                 Branch name, tag, or full 40-character commit SHA to build.
+#                 Examples: main, feature/hpc-fix, v4.0.1, a1b2c3d4...
+#                 NOTE: tags are repository-global — a tag cannot exist on
+#                 two branches simultaneously. Use the SHA directly to target
+#                 a specific commit on a branch that has no tag.
+#
 # qt_variant      (optional, default: "qt6")
 #                 Qt/Qwt combination passed to the build script.
 #                 Accepted: qt6 | qt5-qwt616 | qt5-qwt630
@@ -82,6 +89,12 @@ on:
         required: true
         type: string
 
+      ref:
+        description: "Branch, tag, or full SHA to check out"
+        required: false
+        type: string
+        default: main
+
       qt_variant:
         description: "Qt/Qwt variant: qt6 | qt5-qwt616 | qt5-qwt630"
         required: false
@@ -124,6 +137,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       # -----------------------------------------------------------------------
       # vcpkg binary cache
