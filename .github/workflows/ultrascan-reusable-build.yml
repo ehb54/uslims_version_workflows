@@ -1,0 +1,223 @@
+# =============================================================================
+# UltraScan3 Reusable Build Workflow
+# =============================================================================
+# Triggered via workflow_call. Builds UltraScan3 and produces a
+# platform-native installer or archive using scripts/build.sh (Linux/macOS)
+# or scripts/build.ps1 via scripts/build.bat (Windows).
+#
+# The build scripts handle all dependency setup themselves when CI=true:
+#   - Linux  : installs missing system packages via apt-get
+#   - macOS  : selects a compatible Xcode version
+#   - All    : bootstraps vcpkg, installs Sphinx if needed
+#
+# INPUTS
+# ------
+# runner          (required)
+#                 GitHub Actions runner label. This also determines the OS
+#                 and architecture.
+#                 Examples: ubuntu-24.04, ubuntu-24.04-arm, macos-15,
+#                           macos-15-xlarge (Apple Silicon), windows-2022
+#
+# qt_variant      (optional, default: "qt6")
+#                 Qt/Qwt combination passed to the build script.
+#                 Accepted: qt6 | qt5-qwt616 | qt5-qwt630
+#
+# profile         (optional, default: "APP")
+#                 CMake build profile.
+#                   APP   Desktop: GUI + programs + DB connector [default]
+#                   TEST  CI: programs + test suite, prefers static libs
+#                   HPC   Headless: no GUI, no DB, requires MPI
+#
+# clean_tier      (optional, default: 0)
+#                 How aggressively to wipe prior build state.
+#                   0  Incremental - only changed files recompiled
+#                   1  --rebuild   - wipes CMake build dir, vcpkg untouched
+#                   2  --clean     - wipes build dir + vcpkg installed/ for triplet
+#                   3  --clean --purge-cache - tier 2 + wipes binary cache
+#
+# artifact_name_prefix  (optional, default: "ultrascan")
+#                 Prefix for the uploaded artifact.
+#                 Final name: "<prefix>-<runner>-<profile>-<qt_variant>"
+#
+# artifact_retention_days  (optional, default: 7)
+#                 Days to retain uploaded artifacts.
+#
+# OUTPUT ARTIFACTS
+# ----------------
+# A platform-native package is always produced and uploaded:
+#   Linux   -> build/<preset>/UltraScan3-*-Linux-*.tar.gz
+#   macOS   -> build/<preset>/UltraScan3-*-macOS.pkg
+#              build/<preset>/UltraScan3-HPC-*-macOS-*.tar.gz  (HPC profile)
+#   Windows -> build/<preset>/UltraScan3-*-Windows.exe
+#
+# EXAMPLE CALLER
+# --------------
+#   jobs:
+#     build-ubuntu:
+#       uses: ./.github/workflows/us3-build-reusable.yml
+#       with:
+#         runner: ubuntu-24.04
+#         qt_variant: qt5-qwt616
+#
+#     build-macos-arm:
+#       uses: ./.github/workflows/us3-build-reusable.yml
+#       with:
+#         runner: macos-15-xlarge
+#         qt_variant: qt6
+#
+#     build-windows:
+#       uses: ./.github/workflows/us3-build-reusable.yml
+#       with:
+#         runner: windows-2022
+#         qt_variant: qt6
+# =============================================================================
+
+name: UltraScan3 Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: GitHub Actions runner label (determines OS and architecture)
+        required: true
+        type: string
+
+      qt_variant:
+        description: "Qt/Qwt variant: qt6 | qt5-qwt616 | qt5-qwt630"
+        required: false
+        type: string
+        default: qt6
+
+      profile:
+        description: "Build profile: APP | TEST | HPC"
+        required: false
+        type: string
+        default: APP
+
+      clean_tier:
+        description: "0=incremental, 1=--rebuild, 2=--clean, 3=--clean --purge-cache"
+        required: false
+        type: number
+        default: 0
+
+      artifact_name_prefix:
+        description: Prefix for the uploaded artifact name
+        required: false
+        type: string
+        default: ultrascan
+
+      artifact_retention_days:
+        description: Days to retain uploaded artifacts
+        required: false
+        type: number
+        default: 7
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ inputs.runner }} / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # vcpkg binary cache
+      # Keyed on the runner label (encodes OS, version, arch) and qt_variant,
+      # plus every file that can change the package set.
+      # -----------------------------------------------------------------------
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.vcpkg-cache
+            ~/vcpkg/downloads
+            ~/vcpkg/packages
+            ~/vcpkg/buildtrees
+            C:\Users\runneradmin\.vcpkg-cache
+            C:\Users\runneradmin\vcpkg\downloads
+            C:\Users\runneradmin\vcpkg\packages
+            C:\Users\runneradmin\vcpkg\buildtrees
+          key: ${{ inputs.runner }}-${{ inputs.qt_variant }}-vcpkg-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/**', 'CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ${{ inputs.runner }}-${{ inputs.qt_variant }}-vcpkg-
+            ${{ inputs.runner }}-vcpkg-
+
+      # -----------------------------------------------------------------------
+      # Build - Linux / macOS
+      # CI=true puts the script into non-interactive mode:
+      #   - Linux : auto-installs any missing system packages via apt-get
+      #   - macOS : auto-selects a compatible Xcode version
+      #   - Both  : bootstraps vcpkg and installs Sphinx without prompting
+      # -----------------------------------------------------------------------
+      - name: Build (Linux / macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CI: "true"
+        run: |
+          set -euo pipefail
+
+          ARGS=("--${{ inputs.qt_variant }}")
+
+          case "${{ inputs.clean_tier }}" in
+            3) ARGS+=("--clean" "--purge-cache") ;;
+            2) ARGS+=("--clean") ;;
+            1) ARGS+=("--rebuild") ;;
+          esac
+
+          ARGS+=("--pkg" "${{ inputs.profile }}")
+
+          echo "Invoking: bash scripts/build.sh ${ARGS[*]}"
+          bash scripts/build.sh "${ARGS[@]}"
+
+      # -----------------------------------------------------------------------
+      # Build - Windows
+      # build.bat forwards all args to build.ps1.
+      # CI=true puts the script into non-interactive mode (no prompts,
+      # no interactive Xcode/tool questions).
+      # -----------------------------------------------------------------------
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CI: "true"
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $BuildArgs = @("--${{ inputs.qt_variant }}")
+
+          $cleanTier = [int]"${{ inputs.clean_tier }}"
+          if     ($cleanTier -ge 3) { $BuildArgs += "--clean"; $BuildArgs += "--purge-cache" }
+          elseif ($cleanTier -eq 2) { $BuildArgs += "--clean" }
+          elseif ($cleanTier -eq 1) { $BuildArgs += "--rebuild" }
+
+          $BuildArgs += "--pkg"
+          $BuildArgs += "${{ inputs.profile }}"
+
+          Write-Host "Invoking: scripts\build.bat $($BuildArgs -join ' ')"
+          & scripts\build.bat @BuildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # -----------------------------------------------------------------------
+      # Upload the platform-native package.
+      # Glob covers all three platforms and both APP and HPC output patterns.
+      # Fails loudly if no matching file is found so a silent packaging
+      # failure is never mistaken for a successful build.
+      # -----------------------------------------------------------------------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-${{ inputs.profile }}-${{ inputs.qt_variant }}
+          path: |
+            build/**/UltraScan3-*-Linux-*.tar.gz
+            build/**/UltraScan3-*-macOS.pkg
+            build/**/UltraScan3-HPC-*-macOS-*.tar.gz
+            build/**/UltraScan3-*-Windows.exe
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+
