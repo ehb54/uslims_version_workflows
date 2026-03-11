@@ -8,7 +8,7 @@
 # WHAT THIS WORKFLOW DOES
 # -----------------------
 # 1. Checkout  - clone the repo at the requested ref
-# 2. Cache     - restore/save the vcpkg binary cache
+# 2. Cache     - restore/save the vcpkg binary cache and downloads cache
 # 3. Build     - invoke build.sh or build.bat with CI=true
 # 4. Upload    - publish the platform-native package as a workflow artifact
 #
@@ -150,14 +150,12 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       # 1. CHECKOUT
-      # Clone at the requested ref. fetch-depth: 1 for speed; if the build
-      # ever needs git history (e.g. for version tagging) increase this.
       # -----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-          fetch-depth: 1
+          fetch-depth: 0
 
       # -----------------------------------------------------------------------
       # 2. EXECUTABLE PERMISSIONS
@@ -182,7 +180,7 @@ jobs:
       #
       # Cache paths cover both Unix (~/.vcpkg-cache) and Windows
       # (C:\Users\runneradmin\.vcpkg-cache) home directory conventions.
-      # ~/vcpkg/downloads is included because vcpkg reuses downloaded source
+      # ~/vcpkg-downloads is included because vcpkg reuses downloaded source
       # archives across port rebuilds even when the binary cache is cold.
       #
       # Note: vcpkg itself (~/.vcpkg or ~/vcpkg) is NOT cached here.
@@ -196,9 +194,8 @@ jobs:
         with:
           path: |
             ~/.vcpkg-cache
-            ~/vcpkg/downloads
-          #key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json') }}
+            ~/vcpkg-downloads
+          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
             vcpkg-${{ inputs.runner }}-
@@ -209,7 +206,7 @@ jobs:
         with:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
-            C:\Users\runneradmin\vcpkg\downloads
+            C:\Users\runneradmin\vcpkg-downloads
           key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
@@ -258,6 +255,9 @@ jobs:
               ;;
           esac
 
+          export US3_VCPKG_DOWNLOADS="$HOME/vcpkg-downloads"
+          mkdir -p "$US3_VCPKG_DOWNLOADS"
+          
           echo "Invoking: bash scripts/build.sh ${ARGS[*]}"
           bash scripts/build.sh "${ARGS[@]}"
 
@@ -287,17 +287,20 @@ jobs:
             "rebuild" { $BuildArgs += "--rebuild" }
             "clean" { $BuildArgs += "--clean" }
             "clean-purge-cache" {
-            $BuildArgs += "--clean"
-            $BuildArgs += "--purge-cache"
-          }
-          default {
-            Write-Error "Unknown clean_tier: ${{ inputs.clean_tier }}"
-            exit 1
+              $BuildArgs += "--clean"
+              $BuildArgs += "--purge-cache"
+            }
+            default {
+              Write-Error "Unknown clean_tier: ${{ inputs.clean_tier }}"
+              exit 1
             }
           }
 
           $BuildArgs += "--pkg"
 
+          $env:US3_VCPKG_DOWNLOADS = Join-Path $HOME "vcpkg-downloads"
+          New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_DOWNLOADS | Out-Null
+          
           Write-Host "Invoking: scripts\build.bat $($BuildArgs -join ' ')"
           & scripts\build.bat @BuildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
