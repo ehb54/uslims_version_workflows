@@ -15,7 +15,7 @@
 # WHAT THIS WORKFLOW DOES NOT DO
 # --------------------------------
 # The build scripts own all build logic and machine setup:
-#   build.sh     → calls bootstrap-deps.sh (Linux apt) or
+#   build.sh     → calls bootstrap-linux.sh (Linux apt) or
 #                  bootstrap-macos.sh (Homebrew + Xcode switching);
 #                  then runs vcpkg + CMake + package
 #   build.ps1    → calls bootstrap-windows.ps1 (winget + VS check);
@@ -152,7 +152,7 @@ jobs:
       # 1. CHECKOUT
       # -----------------------------------------------------------------------
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -167,7 +167,7 @@ jobs:
       - name: Ensure build scripts are executable
         if: runner.os != 'Windows'
         shell: bash
-        run: chmod +x scripts/build.sh scripts/bootstrap-deps.sh scripts/bootstrap-macos.sh
+        run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh scripts/bootstrap-macos.sh
 
       # -----------------------------------------------------------------------
       # 3. VCPKG BINARY CACHE
@@ -190,7 +190,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache vcpkg binary cache and downloads (Unix)
         if: runner.os != 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.vcpkg-cache
@@ -202,7 +202,7 @@ jobs:
             
       - name: Cache vcpkg binary cache and downloads (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
@@ -217,7 +217,7 @@ jobs:
       #
       # CI=true activates non-interactive mode in build.sh and all bootstrap
       # scripts it delegates to:
-      #   - bootstrap-deps.sh  (Linux)  : apt-get without prompts
+      #   - bootstrap-linux.sh  (Linux)  : apt-get without prompts
       #   - bootstrap-macos.sh (macOS)  : brew install without prompts,
       #                                   fails loudly if CLT absent
       #   - build.sh itself             : Xcode auto-switch, vcpkg setup,
@@ -333,7 +333,7 @@ jobs:
       #   - UTC timestamp for easier sorting and identification
       # -----------------------------------------------------------------------
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-${{ steps.ts.outputs.value }}
           path: |
