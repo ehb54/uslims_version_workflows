@@ -193,10 +193,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: |
-            ~/.vcpkg-cache
-            ~/vcpkg-downloads
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-${{ inputs.runner }}-${{ inputs.profile }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
+            vcpkg-${{ inputs.runner }}-${{ inputs.profile }}-${{ inputs.qt_variant }}-
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
             vcpkg-${{ inputs.runner }}-
             
@@ -212,6 +213,22 @@ jobs:
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
             vcpkg-${{ inputs.runner }}-
 
+      - name: Show restored vcpkg cache state (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          echo "=========================================="
+          echo "Post-restore cache diagnostics"
+          echo "=========================================="
+          df -h
+          echo "US3_VCPKG_CACHE=$US3_VCPKG_CACHE"
+          echo "US3_VCPKG_DOWNLOADS=$US3_VCPKG_DOWNLOADS"
+          du -sh "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS" 2>/dev/null || true
+          find "$US3_VCPKG_CACHE" -maxdepth 2 | head -n 30 || true
+          find "$US3_VCPKG_DOWNLOADS" -maxdepth 2 | head -n 30 || true
       # -----------------------------------------------------------------------
       # 4. BUILD — Linux / macOS
       #
@@ -230,8 +247,12 @@ jobs:
         shell: bash
         env:
           CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
         run: |
           set -euo pipefail
+
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
 
           ARGS=("${{ inputs.profile }}")
           ARGS+=("--${{ inputs.qt_variant }}")
@@ -255,9 +276,9 @@ jobs:
               ;;
           esac
 
-          export US3_VCPKG_DOWNLOADS="$HOME/vcpkg-downloads"
-          mkdir -p "$US3_VCPKG_DOWNLOADS"
-          
+          echo "US3_VCPKG_CACHE=$US3_VCPKG_CACHE"
+          echo "US3_VCPKG_DOWNLOADS=$US3_VCPKG_DOWNLOADS"
+
           echo "Invoking: bash scripts/build.sh ${ARGS[*]}"
           bash scripts/build.sh "${ARGS[@]}"
 
