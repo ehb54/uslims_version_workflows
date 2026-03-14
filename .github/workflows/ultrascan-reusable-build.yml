@@ -196,11 +196,10 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.profile }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            vcpkg-${{ inputs.runner }}-${{ inputs.profile }}-${{ inputs.qt_variant }}-
+            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
-            vcpkg-${{ inputs.runner }}-
             
       - name: Restore vcpkg binary cache and downloads (Windows)
         if: runner.os == 'Windows'
@@ -210,10 +209,10 @@ jobs:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
             C:\Users\runneradmin\vcpkg-downloads
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
+            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
-            vcpkg-${{ inputs.runner }}-
 
       - name: Show restored vcpkg cache state (Unix)
         if: runner.os != 'Windows'
