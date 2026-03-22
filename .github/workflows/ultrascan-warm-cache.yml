@@ -33,13 +33,12 @@
 #
 # PLATFORMS
 # ---------
-#   ubuntu-24.04  / qt6 (or qt5-qwt616)
-#   macos-15      / qt6 (Apple Silicon arm64)
+#   ubuntu-x64 (ubuntu-24.04)  / qt6 (or qt5-qwt616)
+#   macos-arm  (macos-15)      / qt6 (Apple Silicon arm64)
 #
 # TRIGGERS
 # --------
-#   workflow_dispatch only — run manually before a nightly build or after
-#   vcpkg.json / overlay port changes.
+#   workflow_call only — dispatched via warm-cache.yml in the ultrascan3 repo.
 # =============================================================================
 
 name: UltraScan3 Warm vcpkg Cache
@@ -60,7 +59,7 @@ on:
         default: qt6
 
       platforms:
-        description: "Platforms to warm: all | ubuntu | macos"
+        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15)"
         required: false
         type: string
         default: all
@@ -68,7 +67,7 @@ on:
 permissions:
   contents: read
 
-# Only one warm run at a time per ref+variant; a newer dispatch cancels the old one.
+# Only one warm run at a time per ref+variant+platforms.
 concurrency:
   group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
   cancel-in-progress: true
@@ -76,12 +75,12 @@ concurrency:
 jobs:
 
   # ===========================================================================
-  # UBUNTU-24.04 — four sequential stages
+  # UBUNTU-24.04 x64 — four sequential stages
   # ===========================================================================
 
   ubuntu-stage1-base:
-    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 1: base libs"
-    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -126,8 +125,8 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage2-qtbase:
-    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 2: qtbase"
-    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage1-base
     timeout-minutes: 90
@@ -173,8 +172,8 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage3-qtmods:
-    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
-    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage2-qtbase
     timeout-minutes: 60
@@ -221,8 +220,8 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage4-qwt:
-    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 4: Qwt"
-    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage3-qtmods
     timeout-minutes: 45
@@ -277,12 +276,12 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
-  # MACOS-15 (Apple Silicon arm64) — four sequential stages
+  # MACOS-15 arm64 — four sequential stages
   # ===========================================================================
 
   macos-stage1-base:
-    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 1: base libs"
-    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -327,8 +326,8 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage2-qtbase:
-    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 2: qtbase"
-    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage1-base
     timeout-minutes: 120
@@ -374,8 +373,8 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage3-qtmods:
-    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
-    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage2-qtbase
     timeout-minutes: 60
@@ -422,8 +421,8 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage4-qwt:
-    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 4: Qwt"
-    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage3-qtmods
     timeout-minutes: 45
