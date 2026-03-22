@@ -45,7 +45,7 @@
 name: UltraScan3 Warm vcpkg Cache
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       ref:
         description: "Branch, tag, or SHA to check out"
@@ -54,20 +54,23 @@ on:
         default: main
 
       qt_variant:
-        description: "Qt variant"
+        description: "Qt variant: qt6 | qt5-qwt616"
         required: false
-        type: choice
+        type: string
         default: qt6
-        options:
-          - qt6
-          - qt5-qwt616
+
+      platforms:
+        description: "Platforms to warm: all | ubuntu | macos"
+        required: false
+        type: string
+        default: all
 
 permissions:
   contents: read
 
 # Only one warm run at a time per ref+variant; a newer dispatch cancels the old one.
 concurrency:
-  group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}
+  group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
   cancel-in-progress: true
 
 jobs:
@@ -78,6 +81,7 @@ jobs:
 
   ubuntu-stage1-base:
     name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -123,6 +127,7 @@ jobs:
 
   ubuntu-stage2-qtbase:
     name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage1-base
     timeout-minutes: 90
@@ -169,6 +174,7 @@ jobs:
 
   ubuntu-stage3-qtmods:
     name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage2-qtbase
     timeout-minutes: 60
@@ -216,6 +222,7 @@ jobs:
 
   ubuntu-stage4-qwt:
     name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage3-qtmods
     timeout-minutes: 45
@@ -253,10 +260,6 @@ jobs:
         if: always()
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
-      # Stage 4 saves two entries:
-      # - stage4 key  : lets re-runs of this warm workflow skip all 4 stages
-      # - full-build key: matches what ultrascan-reusable-build.yml restores,
-      #   so a warmed cache is used transparently by real builds
       - name: Save vcpkg cache (stage 4)
         uses: actions/cache/save@v4
         with:
@@ -279,6 +282,7 @@ jobs:
 
   macos-stage1-base:
     name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -324,6 +328,7 @@ jobs:
 
   macos-stage2-qtbase:
     name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-15
     needs: macos-stage1-base
     timeout-minutes: 120
@@ -370,6 +375,7 @@ jobs:
 
   macos-stage3-qtmods:
     name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-15
     needs: macos-stage2-qtbase
     timeout-minutes: 60
@@ -417,6 +423,7 @@ jobs:
 
   macos-stage4-qwt:
     name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-15
     needs: macos-stage3-qtmods
     timeout-minutes: 45
