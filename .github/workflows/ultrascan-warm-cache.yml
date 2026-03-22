@@ -1,0 +1,471 @@
+# =============================================================================
+# UltraScan3 vcpkg Cache Warmer
+# =============================================================================
+# Installs vcpkg dependencies in four sequential stages, saving the binary
+# cache after each stage completes.  This ensures that even if a later stage
+# fails (OOM, timeout, disk full), all earlier stages remain cached and the
+# next run continues from where it left off.
+#
+# WHY STAGED?
+# -----------
+# GitHub Actions only writes cache entries when a job succeeds.  Qt alone
+# takes 20-30 minutes and several GB of build intermediates.  Attempting to
+# build all dependencies in one job risks running out of disk or time before
+# anything gets cached.  Splitting into stages means each completed stage is
+# a durable cache entry, independent of later failures.
+#
+# STAGE BREAKDOWN (qt6-app)
+# -------------------------
+#   1  base    openssl, zlib, libarchive, eigen3          (fast, ~5 min)
+#   2  qtbase  qtbase                                     (slow, ~25 min)
+#   3  qtmods  qtsvg, qttools, qtdatavis3d, qtmultimedia, (medium, ~15 min)
+#              libmariadb, sqlite3
+#   4  qwt     qwt-6-3-0-qt6, qwtplot3d-qwt-6-3-0-qt6   (medium, ~10 min)
+#
+# CACHE KEY SCHEME
+# ----------------
+# Stage N saves with key: vcpkg-<runner>-<qt_variant>-APP-stageN-<hash>
+# Each stage restores using the previous stage's key as the primary key,
+# falling back through earlier stages, so vcpkg only builds what is missing.
+#
+# Stage 4 additionally saves with the key that ultrascan-reusable-build.yml
+# expects, so a warmed cache is used transparently by full builds.
+#
+# PLATFORMS
+# ---------
+#   ubuntu-24.04  / qt6 (or qt5-qwt616)
+#   macos-15      / qt6 (Apple Silicon arm64)
+#
+# TRIGGERS
+# --------
+#   workflow_dispatch only — run manually before a nightly build or after
+#   vcpkg.json / overlay port changes.
+# =============================================================================
+
+name: UltraScan3 Warm vcpkg Cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to check out"
+        required: false
+        type: string
+        default: main
+
+      qt_variant:
+        description: "Qt variant"
+        required: false
+        type: choice
+        default: qt6
+        options:
+          - qt6
+          - qt5-qwt616
+
+permissions:
+  contents: read
+
+# Only one warm run at a time per ref+variant; a newer dispatch cancels the old one.
+concurrency:
+  group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ===========================================================================
+  # UBUNTU-24.04 — four sequential stages
+  # ===========================================================================
+
+  ubuntu-stage1-base:
+    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 1 — base libs
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 1 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 1)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  ubuntu-stage2-qtbase:
+    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage1-base
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 2 — qtbase
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 2 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 2)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  ubuntu-stage3-qtmods:
+    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage2-qtbase
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 2)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 3 — Qt modules + DB libs
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 3 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 3)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  ubuntu-stage4-qwt:
+    name: "Ubuntu / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage3-qtmods
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 3)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 4 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 4 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      # Stage 4 saves two entries:
+      # - stage4 key  : lets re-runs of this warm workflow skip all 4 stages
+      # - full-build key: matches what ultrascan-reusable-build.yml restores,
+      #   so a warmed cache is used transparently by real builds
+      - name: Save vcpkg cache (stage 4)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+      - name: Save vcpkg cache (full-build key)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+  # ===========================================================================
+  # MACOS-15 (Apple Silicon arm64) — four sequential stages
+  # ===========================================================================
+
+  macos-stage1-base:
+    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 1 — base libs
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 1 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 1)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-stage2-qtbase:
+    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+    runs-on: macos-15
+    needs: macos-stage1-base
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 2 — qtbase
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 2 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 2)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-stage3-qtmods:
+    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+    runs-on: macos-15
+    needs: macos-stage2-qtbase
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 2)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 3 — Qt modules + DB libs
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 3 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 3)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-stage4-qwt:
+    name: "macOS ARM / ${{ inputs.qt_variant }} — Stage 4: Qwt"
+    runs-on: macos-15
+    needs: macos-stage3-qtmods
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 3)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 4 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 4 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 4)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+      - name: Save vcpkg cache (full-build key)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
