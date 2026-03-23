@@ -15,7 +15,7 @@
 # WHAT THIS WORKFLOW DOES NOT DO
 # --------------------------------
 # The build scripts own all build logic and machine setup:
-#   build.sh     → calls bootstrap-linux.sh (Linux apt) or
+#   build.sh     → calls bootstrap-linux.sh (Linux apt/dnf) or
 #                  bootstrap-macos.sh (Homebrew + Xcode switching);
 #                  then runs vcpkg + CMake + package
 #   build.ps1    → calls bootstrap-windows.ps1 (winget + VS check);
@@ -31,6 +31,7 @@
 #                 GitHub Actions runner label. Determines OS and architecture.
 #                 Examples: ubuntu-24.04, ubuntu-24.04-arm, macos-15,
 #                           macos-15-xlarge (Apple Silicon), windows-2022
+#                 For Rocky 8: pass ubuntu-24.04 and set cache_os_label=rocky8.
 #
 # cache_os_label  (optional, default: same as runner)
 #                 Override the OS label used in vcpkg cache keys.
@@ -38,8 +39,9 @@
 #                 e.g. building Rocky 8 inside a container on ubuntu-24.04:
 #                   runner: ubuntu-24.04
 #                   cache_os_label: rocky8
-#                 This keeps Rocky 8 binaries isolated from Ubuntu binaries
-#                 since they are compiled against different system libraries.
+#                 When set to "rocky8" a dedicated job runs the build inside
+#                 a rockylinux:8 container. This keeps Rocky 8 binaries
+#                 isolated from Ubuntu binaries (different glibc version).
 #
 # ref             (optional, default: "main")
 #                 Branch name, tag, or full 40-character commit SHA to build.
@@ -93,7 +95,7 @@
 #       with:
 #         runner: ubuntu-24.04
 #         cache_os_label: rocky8
-#         qt_variant: qt5-qwt616
+#         qt_variant: qt6
 #
 #     build-macos-arm:
 #       uses: ./.github/workflows/ultrascan-reusable-build.yml
@@ -119,7 +121,7 @@ on:
         type: string
 
       cache_os_label:
-        description: "Override the OS label in vcpkg cache keys (e.g. rocky8). Defaults to runner label."
+        description: "Override the OS label in vcpkg cache keys (e.g. rocky8). Set to 'rocky8' to run inside a rockylinux:8 container."
         required: false
         type: string
         default: ""
@@ -164,54 +166,30 @@ permissions:
   contents: read
 
 jobs:
+
+  # ===========================================================================
+  # STANDARD BUILD
+  # Runs on the specified runner natively (Ubuntu, macOS, Windows).
+  # Skipped when cache_os_label=rocky8 — that uses the container job below.
+  # ===========================================================================
   build:
     name: ${{ inputs.runner }} / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
+    if: inputs.cache_os_label != 'rocky8'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 360
 
     steps:
-      # -----------------------------------------------------------------------
-      # 1. CHECKOUT
-      # -----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
-      # -----------------------------------------------------------------------
-      # 2. EXECUTABLE PERMISSIONS
-      # Git preserves the execute bit when the file is committed with it set,
-      # but a safety net here costs nothing and prevents a hard-to-diagnose
-      # failure if a script was ever committed without +x.
-      # This step only applies on Linux/macOS; Windows runners ignore it.
-      # -----------------------------------------------------------------------
       - name: Ensure build scripts are executable
         if: runner.os != 'Windows'
         shell: bash
         run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh scripts/bootstrap-macos.sh
 
-      # -----------------------------------------------------------------------
-      # 3. VCPKG BINARY CACHE
-      # Keyed on:
-      #   - cache_os_label    : OS identifier for cache isolation; defaults to
-      #                         runner label. Set explicitly for container builds
-      #                         (e.g. rocky8) to avoid mixing incompatible binaries.
-      #   - qt_variant        : different Qt variants install different packages
-      #   - vcpkg.json        : baseline + dependency changes
-      #   - admin/cmake/      : overlay triplets and ports that affect builds
-      #   - CMakeLists.txt    : top-level cmake changes that can affect vcpkg
-      #
-      # Cache paths cover both Unix (~/.vcpkg-cache) and Windows
-      # (C:\Users\runneradmin\.vcpkg-cache) home directory conventions.
-      # ~/vcpkg-downloads is included because vcpkg reuses downloaded source
-      # archives across port rebuilds even when the binary cache is cold.
-      #
-      # Note: vcpkg itself (~/.vcpkg or ~/vcpkg) is NOT cached here.
-      # build.sh / build.ps1 clone vcpkg on first run and the clone is fast.
-      # Caching the full vcpkg directory adds hundreds of MB with little gain
-      # since the binary cache already captures the compiled output.
-      # -----------------------------------------------------------------------
       - name: Restore vcpkg binary cache and downloads (Unix)
         if: runner.os != 'Windows'
         id: vcpkg-cache-restore-unix
@@ -255,19 +233,6 @@ jobs:
           find "$US3_VCPKG_CACHE" -maxdepth 2 | head -n 30 || true
           find "$US3_VCPKG_DOWNLOADS" -maxdepth 2 | head -n 30 || true
 
-      # -----------------------------------------------------------------------
-      # 4. BUILD — Linux / macOS
-      #
-      # CI=true activates non-interactive mode in build.sh and all bootstrap
-      # scripts it delegates to:
-      #   - bootstrap-linux.sh  (Linux)  : apt-get without prompts
-      #   - bootstrap-macos.sh (macOS)  : brew install without prompts,
-      #                                   fails loudly if CLT absent
-      #   - build.sh itself             : Xcode auto-switch, vcpkg setup,
-      #                                   Sphinx pip install, cmake + package
-      #
-      # Nothing else is needed here. The scripts own all the setup logic.
-      # -----------------------------------------------------------------------
       - name: Build (Linux / macOS)
         if: runner.os != 'Windows'
         shell: bash
@@ -277,48 +242,20 @@ jobs:
           US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
         run: |
           set -euo pipefail
-
           mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
-
           ARGS=("${{ inputs.profile }}")
           ARGS+=("--${{ inputs.qt_variant }}")
           ARGS+=("--pkg")
-
           case "${{ inputs.clean_tier }}" in
-            incremental)
-              ;;
-            rebuild)
-              ARGS+=("--rebuild")
-              ;;
-            clean)
-              ARGS+=("--clean")
-              ;;
-            clean-purge-cache)
-              ARGS+=("--clean" "--purge-cache")
-              ;;
-            *)
-              echo "Unknown clean_tier: ${{ inputs.clean_tier }}" >&2
-              exit 1
-              ;;
+            incremental)       ;;
+            rebuild)           ARGS+=("--rebuild") ;;
+            clean)             ARGS+=("--clean") ;;
+            clean-purge-cache) ARGS+=("--clean" "--purge-cache") ;;
+            *) echo "Unknown clean_tier: ${{ inputs.clean_tier }}" >&2; exit 1 ;;
           esac
-
-          echo "US3_VCPKG_CACHE=$US3_VCPKG_CACHE"
-          echo "US3_VCPKG_DOWNLOADS=$US3_VCPKG_DOWNLOADS"
-
           echo "Invoking: bash scripts/build.sh ${ARGS[*]}"
           bash scripts/build.sh "${ARGS[@]}"
 
-      # -----------------------------------------------------------------------
-      # 4. BUILD (Windows)
-      #
-      # Uses the batch wrapper instead of calling build.ps1 directly.
-      # build.bat normalizes Unix-style "--flag" arguments into the PowerShell
-      # "-flag" form expected by build.ps1, so Windows can use the same
-      # user-facing argument style as Linux/macOS.
-      #
-      # Profile is passed first so APP / TEST / HPC works positionally the same
-      # way across platforms.
-      # -----------------------------------------------------------------------
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -326,28 +263,17 @@ jobs:
           CI: "true"
         run: |
           $ErrorActionPreference = "Stop"
-
           $BuildArgs = @("${{ inputs.profile }}", "--${{ inputs.qt_variant }}")
-
           switch ("${{ inputs.clean_tier }}") {
-            "incremental" { }
-            "rebuild" { $BuildArgs += "--rebuild" }
-            "clean" { $BuildArgs += "--clean" }
-            "clean-purge-cache" {
-              $BuildArgs += "--clean"
-              $BuildArgs += "--purge-cache"
-            }
-            default {
-              Write-Error "Unknown clean_tier: ${{ inputs.clean_tier }}"
-              exit 1
-            }
+            "incremental"       { }
+            "rebuild"           { $BuildArgs += "--rebuild" }
+            "clean"             { $BuildArgs += "--clean" }
+            "clean-purge-cache" { $BuildArgs += "--clean"; $BuildArgs += "--purge-cache" }
+            default { Write-Error "Unknown clean_tier: ${{ inputs.clean_tier }}"; exit 1 }
           }
-
           $BuildArgs += "--pkg"
-
           $env:US3_VCPKG_DOWNLOADS = Join-Path $HOME "vcpkg-downloads"
           New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_DOWNLOADS | Out-Null
-
           Write-Host "Invoking: scripts\build.bat $($BuildArgs -join ' ')"
           & scripts\build.bat @BuildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -356,9 +282,6 @@ jobs:
         if: always() && runner.os != 'Windows'
         shell: bash
         run: |
-          echo "=========================================="
-          echo "Reclaim disk before cache save (Unix)"
-          echo "=========================================="
           rm -rf /home/runner/us3-scratch/vcpkg/buildtrees || true
           rm -rf /home/runner/us3-scratch/vcpkg/packages || true
           df -h
@@ -382,34 +305,12 @@ jobs:
             C:\Users\runneradmin\vcpkg-downloads
           key: ${{ steps.vcpkg-cache-restore-windows.outputs.cache-primary-key }}
 
-      # -----------------------------------------------------------------------
-      # 5. GENERATE ARTIFACT TIMESTAMP
-      #
-      # Uses a short UTC timestamp (YYYYMMDD-HHMM) for artifact naming.
-      # This keeps artifact names human-readable when multiple on-demand builds
-      # of the same branch/profile/Qt variant are triggered close together.
-      # -----------------------------------------------------------------------
       - name: Generate artifact timestamp
         if: always()
         id: ts
         shell: bash
         run: echo "value=$(date -u +'%Y%m%d-%H%M')" >> "$GITHUB_OUTPUT"
 
-      # -----------------------------------------------------------------------
-      # 6. UPLOAD ARTIFACT
-      #
-      # Glob covers all three platforms and both APP and HPC output patterns.
-      # if-no-files-found: error ensures a silent packaging failure is never
-      # mistaken for a successful build.
-      #
-      # Artifact name format:
-      #   <artifact_name_prefix>-<runner>-<UTC timestamp>
-      #
-      # The prefix is supplied by the caller workflow and already includes the
-      # run number, ref, profile, and Qt variant. The reusable workflow adds:
-      #   - runner/platform name
-      #   - UTC timestamp for easier sorting and identification
-      # -----------------------------------------------------------------------
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v6
@@ -420,5 +321,112 @@ jobs:
             build/**/UltraScan3-*-macOS.pkg
             build/**/UltraScan3-HPC-*-macOS-*.tar.gz
             build/**/UltraScan3-*-Windows.exe
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+  # ===========================================================================
+  # ROCKY 8 BUILD
+  # Runs inside a rockylinux:8 container on the specified runner (ubuntu-24.04).
+  # The container: key must be static — it cannot be driven from an input —
+  # so Rocky 8 requires this dedicated job.
+  # Respects inputs.qt_variant — both qt5-qwt616 and qt6 are supported.
+  # Cache keys use "rocky8" to isolate from Ubuntu binaries (different glibc).
+  # ===========================================================================
+  build-rocky8:
+    name: rocky8 / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
+    if: inputs.cache_os_label == 'rocky8'
+    runs-on: ${{ inputs.runner }}
+    container:
+      image: rockylinux:8
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Ensure build scripts are executable
+        shell: bash
+        run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg binary cache and downloads
+        id: vcpkg-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          restore-keys: |
+            vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-
+            vcpkg-rocky8-${{ inputs.qt_variant }}-
+
+      - name: Show restored vcpkg cache state
+        shell: bash
+        env:
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          echo "=========================================="
+          echo "Post-restore cache diagnostics"
+          echo "=========================================="
+          df -h
+          du -sh "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS" 2>/dev/null || true
+
+      - name: Build
+        shell: bash
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          set -euo pipefail
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          ARGS=("${{ inputs.profile }}")
+          ARGS+=("--${{ inputs.qt_variant }}")
+          ARGS+=("--pkg")
+          case "${{ inputs.clean_tier }}" in
+            incremental)       ;;
+            rebuild)           ARGS+=("--rebuild") ;;
+            clean)             ARGS+=("--clean") ;;
+            clean-purge-cache) ARGS+=("--clean" "--purge-cache") ;;
+            *) echo "Unknown clean_tier: ${{ inputs.clean_tier }}" >&2; exit 1 ;;
+          esac
+          echo "Invoking: bash scripts/build.sh ${ARGS[*]}"
+          bash scripts/build.sh "${ARGS[@]}"
+
+      - name: Reclaim disk before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /root/us3-scratch/vcpkg/buildtrees || true
+          rm -rf /root/vcpkg/buildtrees || true
+          df -h
+          du -sh "${{ runner.temp }}/us3-vcpkg-cache" "${{ runner.temp }}/us3-vcpkg-downloads" 2>/dev/null || true
+
+      - name: Save vcpkg binary cache and downloads
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: ${{ steps.vcpkg-cache-restore.outputs.cache-primary-key }}
+
+      - name: Generate artifact timestamp
+        if: always()
+        id: ts
+        shell: bash
+        run: echo "value=$(date -u +'%Y%m%d-%H%M')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.artifact_name_prefix }}-rocky8-${{ steps.ts.outputs.value }}
+          path: |
+            build/**/UltraScan3-*-Linux-*.tar.gz
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days }}
