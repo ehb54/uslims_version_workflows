@@ -7,15 +7,15 @@
 # STAGE BREAKDOWN
 # ---------------
 # qt6 (4 stages):
-#   1  base     openssl, zlib, libarchive, eigen3       (~5 min)
-#   2  qtbase   qtbase alone                            (~25-40 min)
-#   3  qtmods   Qt modules + libmariadb + sqlite3       (~15 min)
+#   1  base     openssl, zlib, libarchive, eigen3          (~5 min)
+#   2  qtbase   qtbase alone                               (~25-40 min)
+#   3  qtmods   Qt modules + libmariadb + sqlite3          (~30-60 min)
 #   4  qwt      qwt-6-3-0-qt6 + qwtplot3d-qwt-6-3-0-qt6  (~10 min)
 #
 # qt5-qwt616 (3 stages):
-#   1  base     openssl, zlib, libarchive, eigen3       (~5 min)
-#   2  qt5mods  qt5-base + Qt modules + DB libs         (~20 min)
-#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5   (~10 min)
+#   1  base     openssl, zlib, libarchive, eigen3          (~5 min)
+#   2  qt5mods  qt5-base + Qt modules + DB libs            (~20 min)
+#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5      (~10 min)
 #   (stage 4 job is skipped for qt5 via if condition)
 #
 # Stages use dedicated warm-only features in vcpkg.json (warm-qt6-stage2,
@@ -79,7 +79,7 @@ jobs:
     name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 1: base deps"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -114,6 +114,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -126,7 +127,7 @@ jobs:
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage1-base
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -161,6 +162,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -173,7 +175,7 @@ jobs:
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage2
-    timeout-minutes: 60
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -209,6 +211,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -216,9 +219,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
-      # qt5 is done after stage 3 — write the full-build key now
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: inputs.qt_variant != 'qt6'
+        if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -228,11 +230,10 @@ jobs:
 
   ubuntu-stage4-qwt:
     name: "ubuntu-24.04 / qt6 — Stage 4: Qwt"
-    # Stage 4 only exists for qt6; qt5 finishes at stage 3
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage3
-    timeout-minutes: 45
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -268,6 +269,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -276,6 +278,7 @@ jobs:
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -291,7 +294,7 @@ jobs:
     name: "macos-15 / ${{ inputs.qt_variant }} — Stage 1: base deps"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -326,6 +329,7 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -338,7 +342,7 @@ jobs:
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage1-base
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -373,6 +377,7 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -385,7 +390,7 @@ jobs:
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage2
-    timeout-minutes: 60
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -421,6 +426,7 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -429,7 +435,7 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: inputs.qt_variant != 'qt6'
+        if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -442,7 +448,7 @@ jobs:
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15
     needs: macos-stage3
-    timeout-minutes: 45
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
         with:
@@ -478,6 +484,7 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
@@ -486,6 +493,7 @@ jobs:
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
