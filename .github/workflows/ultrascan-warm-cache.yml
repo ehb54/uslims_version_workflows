@@ -1,35 +1,33 @@
 # =============================================================================
 # UltraScan3 vcpkg Cache Warmer
 # =============================================================================
-# Installs vcpkg dependencies in four sequential stages, saving the binary
-# cache after each stage completes.  This ensures that even if a later stage
-# fails (OOM, timeout, disk full), all earlier stages remain cached and the
-# next run continues from where it left off.
+# Installs vcpkg dependencies in staged jobs, saving the binary cache after
+# each stage completes so partial progress is never lost.
 #
-# WHY STAGED?
-# -----------
-# GitHub Actions only writes cache entries when a job succeeds.  Qt alone
-# takes 20-30 minutes and several GB of build intermediates.  Attempting to
-# build all dependencies in one job risks running out of disk or time before
-# anything gets cached.  Splitting into stages means each completed stage is
-# a durable cache entry, independent of later failures.
+# STAGE BREAKDOWN
+# ---------------
+# qt6 (4 stages):
+#   1  base     openssl, zlib, libarchive, eigen3       (~5 min)
+#   2  qtbase   qtbase alone                            (~25-40 min)
+#   3  qtmods   Qt modules + libmariadb + sqlite3       (~15 min)
+#   4  qwt      qwt-6-3-0-qt6 + qwtplot3d-qwt-6-3-0-qt6  (~10 min)
 #
-# STAGE BREAKDOWN (qt6-app)
-# -------------------------
-#   1  base    openssl, zlib, libarchive, eigen3          (fast, ~5 min)
-#   2  qtbase  qtbase                                     (slow, ~25 min)
-#   3  qtmods  qtsvg, qttools, qtdatavis3d, qtmultimedia, (medium, ~15 min)
-#              libmariadb, sqlite3
-#   4  qwt     qwt-6-3-0-qt6, qwtplot3d-qwt-6-3-0-qt6   (medium, ~10 min)
+# qt5-qwt616 (3 stages):
+#   1  base     openssl, zlib, libarchive, eigen3       (~5 min)
+#   2  qt5mods  qt5-base + Qt modules + DB libs         (~20 min)
+#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5   (~10 min)
+#   (stage 4 job is skipped for qt5 via if condition)
 #
-# CACHE KEY SCHEME
-# ----------------
-# Stage N saves with key: vcpkg-<runner>-<qt_variant>-APP-stageN-<hash>
-# Each stage restores using the previous stage's key as the primary key,
-# falling back through earlier stages, so vcpkg only builds what is missing.
+# Stages use dedicated warm-only features in vcpkg.json (warm-qt6-stage2,
+# warm-qt6-stage3, etc.) so port subsets can be selected in manifest mode.
+# These features have no effect on real builds.
 #
-# Stage 4 additionally saves with the key that ultrascan-reusable-build.yml
-# expects, so a warmed cache is used transparently by full builds.
+# Stage N restores the stage N-1 cache key so vcpkg only builds what is
+# new; ports already in the binary cache are restored instantly.
+#
+# The final stage additionally saves with the key that
+# ultrascan-reusable-build.yml restores, so warmed caches are used
+# transparently by full builds with no changes to that workflow.
 #
 # PLATFORMS
 # ---------
@@ -67,7 +65,6 @@ on:
 permissions:
   contents: read
 
-# Only one warm run at a time per ref+variant+platforms.
 concurrency:
   group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
   cancel-in-progress: true
@@ -75,11 +72,11 @@ concurrency:
 jobs:
 
   # ===========================================================================
-  # UBUNTU-24.04 x64 — four sequential stages
+  # UBUNTU-24.04 x64
   # ===========================================================================
 
   ubuntu-stage1-base:
-    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 1: base deps"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -103,7 +100,7 @@ jobs:
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 1 — base libs
+      - name: Stage 1 — base deps
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -124,8 +121,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
-  ubuntu-stage2-qtbase:
-    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+  ubuntu-stage2:
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage1-base
@@ -150,7 +147,7 @@ jobs:
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 2 — qtbase
+      - name: Stage 2
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -171,11 +168,11 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
-  ubuntu-stage3-qtmods:
-    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+  ubuntu-stage3:
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'Qt modules + DB' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage2-qtbase
+    needs: ubuntu-stage2
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -198,7 +195,7 @@ jobs:
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 3 — Qt modules + DB libs
+      - name: Stage 3
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -219,11 +216,22 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
+      # qt5 is done after stage 3 — write the full-build key now
+      - name: Save vcpkg cache (full-build key, qt5 only)
+        if: inputs.qt_variant != 'qt6'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
   ubuntu-stage4-qwt:
-    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 4: Qwt"
-    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
+    name: "ubuntu-24.04 / qt6 — Stage 4: Qwt"
+    # Stage 4 only exists for qt6; qt5 finishes at stage 3
+    if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage3-qtmods
+    needs: ubuntu-stage3
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -265,7 +273,7 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         uses: actions/cache/save@v4
@@ -273,14 +281,14 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
-  # MACOS-15 arm64 — four sequential stages
+  # MACOS-15 arm64
   # ===========================================================================
 
   macos-stage1-base:
-    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 1: base libs"
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 1: base deps"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     timeout-minutes: 30
@@ -304,7 +312,7 @@ jobs:
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 1 — base libs
+      - name: Stage 1 — base deps
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -325,8 +333,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
-  macos-stage2-qtbase:
-    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 2: qtbase"
+  macos-stage2:
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage1-base
@@ -351,7 +359,7 @@ jobs:
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 2 — qtbase
+      - name: Stage 2
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -372,11 +380,11 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
-  macos-stage3-qtmods:
-    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: Qt modules + DB"
+  macos-stage3:
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'Qt modules + DB' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
-    needs: macos-stage2-qtbase
+    needs: macos-stage2
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -399,7 +407,7 @@ jobs:
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 3 — Qt modules + DB libs
+      - name: Stage 3
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -420,11 +428,20 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
+      - name: Save vcpkg cache (full-build key, qt5 only)
+        if: inputs.qt_variant != 'qt6'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
   macos-stage4-qwt:
-    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 4: Qwt"
-    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
+    name: "macos-15 / qt6 — Stage 4: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15
-    needs: macos-stage3-qtmods
+    needs: macos-stage3
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -466,7 +483,7 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         uses: actions/cache/save@v4
@@ -474,4 +491,4 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
