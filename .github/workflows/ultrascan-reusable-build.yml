@@ -32,6 +32,15 @@
 #                 Examples: ubuntu-24.04, ubuntu-24.04-arm, macos-15,
 #                           macos-15-xlarge (Apple Silicon), windows-2022
 #
+# cache_os_label  (optional, default: same as runner)
+#                 Override the OS label used in vcpkg cache keys.
+#                 Use this when the actual runner differs from the target OS,
+#                 e.g. building Rocky 8 inside a container on ubuntu-24.04:
+#                   runner: ubuntu-24.04
+#                   cache_os_label: rocky8
+#                 This keeps Rocky 8 binaries isolated from Ubuntu binaries
+#                 since they are compiled against different system libraries.
+#
 # ref             (optional, default: "main")
 #                 Branch name, tag, or full 40-character commit SHA to build.
 #
@@ -79,6 +88,13 @@
 #         runner: ubuntu-24.04
 #         qt_variant: qt5-qwt616
 #
+#     build-rocky8:
+#       uses: ./.github/workflows/ultrascan-reusable-build.yml
+#       with:
+#         runner: ubuntu-24.04
+#         cache_os_label: rocky8
+#         qt_variant: qt5-qwt616
+#
 #     build-macos-arm:
 #       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
@@ -101,6 +117,12 @@ on:
         description: GitHub Actions runner label (determines OS and architecture)
         required: true
         type: string
+
+      cache_os_label:
+        description: "Override the OS label in vcpkg cache keys (e.g. rocky8). Defaults to runner label."
+        required: false
+        type: string
+        default: ""
 
       ref:
         description: "Branch, tag, or full SHA to check out"
@@ -172,7 +194,9 @@ jobs:
       # -----------------------------------------------------------------------
       # 3. VCPKG BINARY CACHE
       # Keyed on:
-      #   - runner label      : encodes OS, version, and architecture
+      #   - cache_os_label    : OS identifier for cache isolation; defaults to
+      #                         runner label. Set explicitly for container builds
+      #                         (e.g. rocky8) to avoid mixing incompatible binaries.
       #   - qt_variant        : different Qt variants install different packages
       #   - vcpkg.json        : baseline + dependency changes
       #   - admin/cmake/      : overlay triplets and ports that affect builds
@@ -196,11 +220,11 @@ jobs:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
-            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
-            
+            vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
+            vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
+
       - name: Restore vcpkg binary cache and downloads (Windows)
         if: runner.os == 'Windows'
         id: vcpkg-cache-restore-windows
@@ -209,10 +233,10 @@ jobs:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
             C:\Users\runneradmin\vcpkg-downloads
-          key: vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
-            vcpkg-${{ inputs.runner }}-${{ inputs.qt_variant }}-
+            vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
+            vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
 
       - name: Show restored vcpkg cache state (Unix)
         if: runner.os != 'Windows'
@@ -230,6 +254,7 @@ jobs:
           du -sh "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS" 2>/dev/null || true
           find "$US3_VCPKG_CACHE" -maxdepth 2 | head -n 30 || true
           find "$US3_VCPKG_DOWNLOADS" -maxdepth 2 | head -n 30 || true
+
       # -----------------------------------------------------------------------
       # 4. BUILD — Linux / macOS
       #
@@ -322,7 +347,7 @@ jobs:
 
           $env:US3_VCPKG_DOWNLOADS = Join-Path $HOME "vcpkg-downloads"
           New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_DOWNLOADS | Out-Null
-          
+
           Write-Host "Invoking: scripts\build.bat $($BuildArgs -join ' ')"
           & scripts\build.bat @BuildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

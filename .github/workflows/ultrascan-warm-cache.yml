@@ -33,6 +33,7 @@
 # ---------
 #   ubuntu-x64 (ubuntu-24.04)  / qt6 (or qt5-qwt616)
 #   macos-arm  (macos-15)      / qt6 (Apple Silicon arm64)
+#   rocky8     (ubuntu-24.04 + rockylinux:8 container) / qt5-qwt616
 #
 # TRIGGERS
 # --------
@@ -57,7 +58,7 @@ on:
         default: qt6
 
       platforms:
-        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15)"
+        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | rocky8"
         required: false
         type: string
         default: all
@@ -500,3 +501,170 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+  # ===========================================================================
+  # ROCKY 8 x64 (rockylinux:8 container on ubuntu-24.04)
+  # Qt5+Qwt6.1.6 only — Rocky 8 is a production Linux target with older
+  # system libraries; Qt6 is not supported on this platform.
+  # Cache keys use "rocky8" to isolate from Ubuntu binaries which are
+  # compiled against a different glibc/system library version.
+  # ===========================================================================
+
+  rocky8-stage1-base:
+    name: "rocky8 / qt5-qwt616 — Stage 1: base deps"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    runs-on: ubuntu-24.04
+    container:
+      image: rockylinux:8
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-rocky8-qt5-qwt616-APP-stage1-
+            vcpkg-rocky8-qt5-qwt616-APP-
+
+      - name: Stage 1 — base deps
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 1 --qt5-qwt616
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 1)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  rocky8-stage2:
+    name: "rocky8 / qt5-qwt616 — Stage 2: qt5 + modules"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    runs-on: ubuntu-24.04
+    container:
+      image: rockylinux:8
+    needs: rocky8-stage1-base
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 1)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-rocky8-qt5-qwt616-APP-stage1-
+            vcpkg-rocky8-qt5-qwt616-APP-
+
+      - name: Stage 2
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 2 --qt5-qwt616
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 2)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  rocky8-stage3-qwt:
+    name: "rocky8 / qt5-qwt616 — Stage 3: Qwt"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    runs-on: ubuntu-24.04
+    container:
+      image: rockylinux:8
+    needs: rocky8-stage2
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 2)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-rocky8-qt5-qwt616-APP-stage2-
+            vcpkg-rocky8-qt5-qwt616-APP-stage1-
+            vcpkg-rocky8-qt5-qwt616-APP-
+
+      - name: Stage 3 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 3 --qt5-qwt616
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 3)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+      - name: Save vcpkg cache (full-build key)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt5-qwt616-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
