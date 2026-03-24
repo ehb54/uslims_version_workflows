@@ -6,17 +6,21 @@
 #
 # STAGE BREAKDOWN
 # ---------------
-# qt6 (4 stages):
-#   1  base     openssl, zlib, libarchive, eigen3          (~5 min)
-#   2  qtbase   qtbase alone                               (~25-40 min)
-#   3  qtmods   Qt modules + libmariadb + sqlite3          (~30-60 min)
-#   4  qwt      qwt-6-3-0-qt6 + qwtplot3d-qwt-6-3-0-qt6  (~10 min)
+# qt6 (5 stages):
+#   1  base       openssl, zlib, libarchive, eigen3          (~5 min)
+#   2  qtbase     qtbase alone                               (~25-40 min)
+#   3  qtmulti    qtmultimedia + qtdeclarative               (~30-60 min)
+#   4  qtmods     qtdatavis3d, qtsvg, qttools + DB libs      (~15-20 min)
+#   5  qwt        qwt-6-3-0-qt6 + qwtplot3d-qwt-6-3-0-qt6  (~10 min)
 #
 # qt5-qwt616 (3 stages):
-#   1  base     openssl, zlib, libarchive, eigen3          (~5 min)
-#   2  qt5mods  qt5-base + Qt modules + DB libs            (~20 min)
-#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5      (~10 min)
-#   (stage 4 job is skipped for qt5 via if condition)
+#   1  base     openssl, zlib, libarchive, eigen3            (~5 min)
+#   2  qt5mods  qt5-base + Qt modules + DB libs              (~20 min)
+#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5        (~10 min)
+#   (stages 4+5 jobs are skipped for qt5 via if condition)
+#
+# qtmultimedia pulls qtdeclarative as a transitive dep; it is isolated in
+# stage 3 so its large buildtree does not compete with other ports for disk.
 #
 # Stages use dedicated warm-only features in vcpkg.json (warm-qt6-stage2,
 # warm-qt6-stage3, etc.) so port subsets can be selected in manifest mode.
@@ -172,7 +176,7 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage3:
-    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'Qt modules + DB' || 'Qwt' }}"
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage2
@@ -229,8 +233,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
-  ubuntu-stage4-qwt:
-    name: "ubuntu-24.04 / qt6 — Stage 4: Qwt"
+  ubuntu-stage4-qtmods:
+    name: "ubuntu-24.04 / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     needs: ubuntu-stage3
@@ -256,7 +260,7 @@ jobs:
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 4 — Qwt + QwtPlot3D
+      - name: Stage 4 — Qt modules + DB libs
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -277,6 +281,55 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  ubuntu-stage5-qwt:
+    name: "ubuntu-24.04 / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage4-qtmods
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 4)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-qt6-APP-stage4-
+            vcpkg-ubuntu-24.04-qt6-APP-stage3-
+            vcpkg-ubuntu-24.04-qt6-APP-
+
+      - name: Stage 5 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 5 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 5)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
@@ -387,7 +440,7 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage3:
-    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'Qt modules + DB' || 'Qwt' }}"
+    name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
     needs: macos-stage2
@@ -444,8 +497,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
-  macos-stage4-qwt:
-    name: "macos-15 / qt6 — Stage 4: Qwt"
+  macos-stage4-qtmods:
+    name: "macos-15 / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15
     needs: macos-stage3
@@ -471,7 +524,7 @@ jobs:
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 4 — Qwt + QwtPlot3D
+      - name: Stage 4 — Qt modules + DB libs
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -493,6 +546,55 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
+  macos-stage5-qwt:
+    name: "macos-15 / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
+    runs-on: macos-15
+    needs: macos-stage4-qtmods
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 4)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-qt6-APP-stage4-
+            vcpkg-macos-15-qt6-APP-stage3-
+            vcpkg-macos-15-qt6-APP-
+
+      - name: Stage 5 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 5 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 5)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v4
@@ -504,9 +606,6 @@ jobs:
 
   # ===========================================================================
   # ROCKY 8 x64 (rockylinux:8 container on ubuntu-24.04)
-  # Supports both qt6 and qt5-qwt616 via inputs.qt_variant.
-  # Qt6 uses 4 stages; qt5-qwt616 uses 3 stages (same as ubuntu/macos).
-  # Cache keys use "rocky8" to isolate from Ubuntu binaries (different glibc).
   # ===========================================================================
 
   rocky8-stage1-base:
@@ -609,7 +708,7 @@ jobs:
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage3:
-    name: "rocky8 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'Qt modules + DB' || 'Qwt' }}"
+    name: "rocky8 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
     runs-on: ubuntu-24.04
     container:
@@ -668,8 +767,8 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
-  rocky8-stage4-qwt:
-    name: "rocky8 / qt6 — Stage 4: Qwt"
+  rocky8-stage4-qtmods:
+    name: "rocky8 / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
@@ -697,7 +796,7 @@ jobs:
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
 
-      - name: Stage 4 — Qwt + QwtPlot3D
+      - name: Stage 4 — Qt modules + DB libs
         env:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
@@ -718,6 +817,57 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-cache
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  rocky8-stage5-qwt:
+    name: "rocky8 / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    container:
+      image: rockylinux:8
+    needs: rocky8-stage4-qtmods
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 4)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-rocky8-qt6-APP-stage4-
+            vcpkg-rocky8-qt6-APP-stage3-
+            vcpkg-rocky8-qt6-APP-
+
+      - name: Stage 5 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 5 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 5)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-rocky8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
