@@ -35,9 +35,9 @@
 #
 # PLATFORMS
 # ---------
-#   ubuntu-x64 (ubuntu-24.04)  / qt6 or qt5-qwt616 or qt5-qwt630
-#   macos-arm  (macos-15)      / qt6 or qt5-qwt616 or qt5-qwt630
-#   rocky8     (ubuntu-24.04 + rockylinux:8 container) / qt6 or qt5-qwt616 or qt5-qwt630
+#   ubuntu-x64  (ubuntu-24.04)  / qt6 or qt5-qwt616 or qt5-qwt630
+#   macos-arm   (macos-15)      / qt6 or qt5-qwt616 or qt5-qwt630
+#   rocky8-x64  (rockylinux:8)  / qt6 or qt5-qwt616 or qt5-qwt630
 #
 # TRIGGERS
 # --------
@@ -62,7 +62,7 @@ on:
         default: qt6
 
       platforms:
-        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | rocky8"
+        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | rocky8-x64"
         required: false
         type: string
         default: all
@@ -609,8 +609,8 @@ jobs:
   # ===========================================================================
 
   rocky8-stage1-base:
-    name: "rocky8 / ${{ inputs.qt_variant }} — Stage 1: base deps"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 1: base deps"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
@@ -658,8 +658,8 @@ jobs:
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage2:
-    name: "rocky8 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
@@ -708,8 +708,8 @@ jobs:
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage3:
-    name: "rocky8 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8'
+    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
@@ -768,8 +768,8 @@ jobs:
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   rocky8-stage4-qtmods:
-    name: "rocky8 / qt6 — Stage 4: Qt modules + DB"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8') && inputs.qt_variant == 'qt6'
+    name: "rocky8-x64 / qt6 — Stage 4: Qt modules + DB"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
@@ -819,8 +819,8 @@ jobs:
           key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage5-qwt:
-    name: "rocky8 / qt6 — Stage 5: Qwt"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8') && inputs.qt_variant == 'qt6'
+    name: "rocky8-x64 / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
