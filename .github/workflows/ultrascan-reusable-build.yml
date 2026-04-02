@@ -194,7 +194,7 @@ jobs:
       - name: Restore vcpkg binary cache and downloads (Unix)
         if: runner.os != 'Windows'
         id: vcpkg-cache-restore-unix
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -207,7 +207,7 @@ jobs:
       - name: Restore vcpkg binary cache and downloads (Windows)
         if: runner.os == 'Windows'
         id: vcpkg-cache-restore-windows
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
@@ -290,7 +290,7 @@ jobs:
 
       - name: Save vcpkg binary cache and downloads (Unix)
         if: always() && runner.os != 'Windows'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -299,7 +299,7 @@ jobs:
 
       - name: Save vcpkg binary cache and downloads (Windows)
         if: always() && runner.os == 'Windows'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             C:\Users\runneradmin\.vcpkg-cache
@@ -354,7 +354,7 @@ jobs:
 
       - name: Restore vcpkg binary cache and downloads
         id: vcpkg-cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -409,7 +409,7 @@ jobs:
 
       - name: Save vcpkg binary cache and downloads
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache

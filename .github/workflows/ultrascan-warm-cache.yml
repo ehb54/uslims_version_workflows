@@ -95,7 +95,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -120,7 +120,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 1)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -143,7 +143,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -168,7 +168,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 2)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -191,7 +191,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 2)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -217,7 +217,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 3)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -226,7 +226,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -249,7 +249,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 3)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -275,7 +275,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 4)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -298,7 +298,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 4)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -324,7 +324,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 5)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -333,7 +333,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -359,7 +359,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
 
       - name: Restore vcpkg cache (stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -384,7 +384,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 1)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -407,7 +407,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
 
       - name: Restore vcpkg cache (through stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -432,7 +432,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 2)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -455,7 +455,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
 
       - name: Restore vcpkg cache (through stage 2)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -481,7 +481,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 3)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -490,7 +490,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -513,7 +513,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
 
       - name: Restore vcpkg cache (through stage 3)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -539,7 +539,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 4)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -562,7 +562,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
 
       - name: Restore vcpkg cache (through stage 4)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -588,7 +588,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 5)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -597,7 +597,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -625,7 +625,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -650,7 +650,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 1)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -675,7 +675,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 1)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -700,7 +700,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 2)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -725,7 +725,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 2)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -751,7 +751,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 3)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -760,7 +760,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -785,7 +785,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 3)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -811,7 +811,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 4)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -836,7 +836,7 @@ jobs:
         run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
 
       - name: Restore vcpkg cache (through stage 4)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -862,7 +862,7 @@ jobs:
 
       - name: Save vcpkg cache (stage 5)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
@@ -871,7 +871,7 @@ jobs:
 
       - name: Save vcpkg cache (full-build key)
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ runner.temp }}/us3-vcpkg-cache
