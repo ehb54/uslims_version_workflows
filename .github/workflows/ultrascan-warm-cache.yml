@@ -13,10 +13,10 @@
 #   4  qtmods     qtdatavis3d, qtsvg, qttools + DB libs      (~15-20 min)
 #   5  qwt        qwt-6-3-0-qt6 + qwtplot3d-qwt-6-3-0-qt6  (~10 min)
 #
-# qt5-qwt616 (3 stages):
+# qt5-qwt630 (3 stages):
 #   1  base     openssl, zlib, libarchive, eigen3            (~5 min)
 #   2  qt5mods  qt5-base + Qt modules + DB libs              (~20 min)
-#   3  qwt      qwt-6-1-6 + qwtplot3d-qwt-6-1-6-qt5        (~10 min)
+#   3  qwt      qwt-6-3-0 + qwtplot3d-qwt-6-3-0-qt5        (~10 min)
 #   (stages 4+5 jobs are skipped for qt5 via if condition)
 #
 # qtmultimedia pulls qtdeclarative as a transitive dep; it is isolated in
@@ -35,9 +35,9 @@
 #
 # PLATFORMS
 # ---------
-#   ubuntu-x64  (ubuntu-24.04)  / qt6 or qt5-qwt616 or qt5-qwt630
-#   macos-arm   (macos-15)      / qt6 or qt5-qwt616 or qt5-qwt630
-#   rocky8-x64  (rockylinux:8)  / qt6 or qt5-qwt616 or qt5-qwt630
+#   ubuntu-x64  (ubuntu-24.04)  / qt6 or qt5-qwt630
+#   macos-arm   (macos-15)      / qt6 or qt5-qwt630
+#   rocky8-x64  (rockylinux:8)  / qt6 or qt5-qwt630
 #
 # TRIGGERS
 # --------
@@ -56,7 +56,7 @@ on:
         default: main
 
       qt_variant:
-        description: "Qt variant: qt6 | qt5-qwt616 | qt5-qwt630"
+        description: "Qt variant: qt6 | qt5-qwt630"
         required: false
         type: string
         default: qt6

@@ -48,7 +48,8 @@
 #
 # qt_variant      (optional, default: "qt6")
 #                 Qt/Qwt combination passed to the build script.
-#                 Accepted: qt6 | qt5-qwt616 | qt5-qwt630
+#                 Accepted: qt6 | qt5-qwt630
+#                 qt5-qwt616 is retired; callers should pass qt5-qwt630.
 #
 # profile         (optional, default: "APP")
 #                 CMake build profile.
@@ -88,7 +89,7 @@
 #       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
 #         runner: ubuntu-24.04
-#         qt_variant: qt5-qwt616
+#         qt_variant: qt5-qwt630
 #
 #     build-rocky8:
 #       uses: ./.github/workflows/ultrascan-reusable-build.yml
@@ -133,7 +134,7 @@ on:
         default: main
 
       qt_variant:
-        description: "Qt/Qwt variant: qt6 | qt5-qwt616 | qt5-qwt630"
+        description: "Qt/Qwt variant: qt6 | qt5-qwt630"
         required: false
         type: string
         default: qt6
@@ -329,11 +330,11 @@ jobs:
   # Runs inside a rockylinux:8 container on the specified runner (ubuntu-24.04).
   # The container: key must be static — it cannot be driven from an input —
   # so Rocky 8 requires this dedicated job.
-  # Respects inputs.qt_variant — both qt5-qwt616 and qt6 are supported.
+  # Respects inputs.qt_variant — qt5-qwt630 and qt6 are supported.
   # Cache keys use "rocky8" to isolate from Ubuntu binaries (different glibc).
   # ===========================================================================
   build-rocky8:
-    name: rocky8 / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
+    name: rocky8-x64 / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
     if: inputs.cache_os_label == 'rocky8'
     runs-on: ${{ inputs.runner }}
     container:
