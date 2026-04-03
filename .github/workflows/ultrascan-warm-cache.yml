@@ -340,6 +340,59 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
+  # ---------------------------------------------------------------------------
+  # Ubuntu HPC warm: installs qtbase with the qt6-hpc feature set (including
+  # zstd) and saves under the HPC cache key used by the build workflow.
+  # Runs in parallel with the APP stage chain after stage 1 completes.
+  # ---------------------------------------------------------------------------
+  ubuntu-hpc:
+    name: "ubuntu-24.04 / qt6 — HPC: qtbase (minimal + zstd)"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage1-base
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-linux.sh
+
+      - name: Restore vcpkg cache (through stage 1)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+
+      - name: HPC stage — qtbase with zstd
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage hpc --qt6
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (HPC full-build key)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
   # ===========================================================================
   # MACOS-15 arm64
   # ===========================================================================
