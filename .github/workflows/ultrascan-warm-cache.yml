@@ -35,9 +35,10 @@
 #
 # PLATFORMS
 # ---------
-#   ubuntu-x64  (ubuntu-24.04)  / qt6 or qt5-qwt630
-#   macos-arm   (macos-15)      / qt6 or qt5-qwt630
-#   rocky8-x64  (rockylinux:8)  / qt6 or qt5-qwt630
+#   ubuntu-x64    (ubuntu-24.04)   / qt6 or qt5-qwt630
+#   macos-arm     (macos-15)       / qt6 or qt5-qwt630
+#   macos-intel   (macos-15-intel) / qt6 or qt5-qwt630
+#   rocky8-x64    (rockylinux:8)   / qt6 or qt5-qwt630
 #
 # TRIGGERS
 # --------
@@ -62,7 +63,7 @@ on:
         default: qt6
 
       platforms:
-        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | rocky8-x64"
+        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | macos-intel (macos-15-intel) | rocky8-x64"
         required: false
         type: string
         default: all
@@ -340,11 +341,6 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
-  # ---------------------------------------------------------------------------
-  # Ubuntu HPC warm: installs qtbase with the qt6-hpc feature set (including
-  # zstd) and saves under the HPC cache key used by the build workflow.
-  # Runs in parallel with the APP stage chain after stage 1 completes.
-  # ---------------------------------------------------------------------------
   ubuntu-hpc:
     name: "ubuntu-24.04 / qt6 — HPC: qtbase (minimal + zstd)"
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
@@ -658,6 +654,270 @@ jobs:
           key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
+  # MACOS-15-INTEL x86_64
+  # ===========================================================================
+
+  macos-intel-stage1-base:
+    name: "macos-15-intel / ${{ inputs.qt_variant }} — Stage 1: base deps"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
+    runs-on: macos-15-intel
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (stage 1)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 1 — base deps
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 1 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 1)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-intel-stage2:
+    name: "macos-15-intel / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
+    runs-on: macos-15-intel
+    needs: macos-intel-stage1-base
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 1)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 2
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 2 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 2)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-intel-stage3:
+    name: "macos-15-intel / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
+    runs-on: macos-15-intel
+    needs: macos-intel-stage2
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 2)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 3
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 3 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 3)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+      - name: Save vcpkg cache (full-build key, qt5 only)
+        if: always() && inputs.qt_variant != 'qt6'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+  macos-intel-stage4-qtmods:
+    name: "macos-15-intel / qt6 — Stage 4: Qt modules + DB"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
+    runs-on: macos-15-intel
+    needs: macos-intel-stage3
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 3)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
+
+      - name: Stage 4 — Qt modules + DB libs
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 4 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 4)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+  macos-intel-stage5-qwt:
+    name: "macos-15-intel / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
+    runs-on: macos-15-intel
+    needs: macos-intel-stage4-qtmods
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/warm-cache.sh scripts/bootstrap-macos.sh
+
+      - name: Restore vcpkg cache (through stage 4)
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          restore-keys: |
+            vcpkg-macos-15-intel-qt6-APP-stage4-
+            vcpkg-macos-15-intel-qt6-APP-stage3-
+            vcpkg-macos-15-intel-qt6-APP-
+
+      - name: Stage 5 — Qwt + QwtPlot3D
+        env:
+          CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+        run: |
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
+          bash scripts/warm-cache.sh --stage 5 --${{ inputs.qt_variant }}
+
+      - name: Reclaim disk before cache save
+        if: always()
+        run: rm -rf "$HOME/vcpkg/buildtrees" || true
+
+      - name: Save vcpkg cache (stage 5)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+
+      - name: Save vcpkg cache (full-build key)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+  # ===========================================================================
   # ROCKY 8 x64 (rockylinux:8 container on ubuntu-24.04)
   # ===========================================================================
 
@@ -931,11 +1191,6 @@ jobs:
             ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
-  # ---------------------------------------------------------------------------
-  # Rocky 8 HPC warm: installs qtbase with the qt6-hpc feature set (including
-  # zstd) and saves under the HPC cache key used by the build workflow.
-  # Runs in parallel with the APP stage chain after stage 1 completes.
-  # ---------------------------------------------------------------------------
   rocky8-hpc:
     name: "rocky8-x64 / qt6 — HPC: qtbase (minimal + zstd)"
     if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
