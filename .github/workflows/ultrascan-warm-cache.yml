@@ -39,6 +39,7 @@
 #
 # A cleanup job runs after all platforms complete and deletes intermediate
 # stage1-stage5 keys, keeping only the full-build keys in the cache.
+# The caller workflow must grant actions: write permission for this to work.
 #
 # PLATFORMS
 # ---------
@@ -77,7 +78,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
@@ -1151,6 +1151,7 @@ jobs:
   # keeping only the full-build keys. This prevents the repo from hitting the
   # 10 GB cache limit and having entries evicted.
   # Runs even if some platform jobs failed (so partial stage keys are cleaned up).
+  # Requires the caller workflow to grant actions: write permission.
   # ===========================================================================
 
   cleanup-stage-caches:
