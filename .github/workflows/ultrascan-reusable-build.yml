@@ -8,7 +8,7 @@
 # WHAT THIS WORKFLOW DOES
 # -----------------------
 # 1. Checkout  - clone the repo at the requested ref
-# 2. Cache     - restore/save the vcpkg binary cache and downloads cache
+# 2. Cache     - restore/save the vcpkg binary cache
 # 3. Build     - invoke build.sh or build.bat with CI=true
 # 4. Upload    - publish the platform-native package as a workflow artifact
 #
@@ -191,27 +191,23 @@ jobs:
         shell: bash
         run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh scripts/bootstrap-macos.sh
 
-      - name: Restore vcpkg binary cache and downloads (Unix)
+      - name: Restore vcpkg binary cache (Unix)
         if: runner.os != 'Windows'
         id: vcpkg-cache-restore-unix
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
 
-      - name: Restore vcpkg binary cache and downloads (Windows)
+      - name: Restore vcpkg binary cache (Windows)
         if: runner.os == 'Windows'
         id: vcpkg-cache-restore-windows
         uses: actions/cache/restore@v5
         with:
-          path: |
-            C:\Users\runneradmin\.vcpkg-cache
-            C:\Users\runneradmin\vcpkg-downloads
+          path: C:\Users\runneradmin\.vcpkg-cache
           key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
@@ -286,24 +282,20 @@ jobs:
           rm -rf /home/runner/us3-scratch/vcpkg/buildtrees || true
           rm -rf /home/runner/us3-scratch/vcpkg/packages || true
           df -h
-          du -sh "${{ runner.temp }}/us3-vcpkg-cache" "${{ runner.temp }}/us3-vcpkg-downloads" 2>/dev/null || true
+          du -sh "${{ runner.temp }}/us3-vcpkg-cache" 2>/dev/null || true
 
-      - name: Save vcpkg binary cache and downloads (Unix)
+      - name: Save vcpkg binary cache (Unix)
         if: always() && runner.os != 'Windows'
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: ${{ steps.vcpkg-cache-restore-unix.outputs.cache-primary-key }}
 
-      - name: Save vcpkg binary cache and downloads (Windows)
+      - name: Save vcpkg binary cache (Windows)
         if: always() && runner.os == 'Windows'
         uses: actions/cache/save@v5
         with:
-          path: |
-            C:\Users\runneradmin\.vcpkg-cache
-            C:\Users\runneradmin\vcpkg-downloads
+          path: C:\Users\runneradmin\.vcpkg-cache
           key: ${{ steps.vcpkg-cache-restore-windows.outputs.cache-primary-key }}
 
       - name: Generate artifact timestamp
@@ -352,13 +344,11 @@ jobs:
         shell: bash
         run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh
 
-      - name: Restore vcpkg binary cache and downloads
+      - name: Restore vcpkg binary cache
         id: vcpkg-cache-restore
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-
@@ -374,7 +364,7 @@ jobs:
           echo "Post-restore cache diagnostics"
           echo "=========================================="
           df -h
-          du -sh "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS" 2>/dev/null || true
+          du -sh "$US3_VCPKG_CACHE" 2>/dev/null || true
 
       - name: Build
         shell: bash
@@ -405,15 +395,13 @@ jobs:
           rm -rf /root/us3-scratch/vcpkg/buildtrees || true
           rm -rf /root/vcpkg/buildtrees || true
           df -h
-          du -sh "${{ runner.temp }}/us3-vcpkg-cache" "${{ runner.temp }}/us3-vcpkg-downloads" 2>/dev/null || true
+          du -sh "${{ runner.temp }}/us3-vcpkg-cache" 2>/dev/null || true
 
-      - name: Save vcpkg binary cache and downloads
+      - name: Save vcpkg binary cache
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: ${{ steps.vcpkg-cache-restore.outputs.cache-primary-key }}
 
       - name: Generate artifact timestamp

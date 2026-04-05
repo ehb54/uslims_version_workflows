@@ -33,6 +33,13 @@
 # ultrascan-reusable-build.yml restores, so warmed caches are used
 # transparently by full builds with no changes to that workflow.
 #
+# Only the binary cache (us3-vcpkg-cache) is saved — not the downloads cache.
+# This halves cache entry size and keeps the repo under the 10 GB cache limit.
+# vcpkg re-downloads source tarballs on a cold start; no rebuild is triggered.
+#
+# A cleanup job runs after all platforms complete and deletes intermediate
+# stage1-stage5 keys, keeping only the full-build keys in the cache.
+#
 # PLATFORMS
 # ---------
 #   ubuntu-x64    (ubuntu-24.04)   / qt6 or qt5-qwt630
@@ -70,6 +77,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
@@ -98,9 +106,7 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -123,9 +129,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage2:
@@ -146,9 +150,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -171,9 +173,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage3:
@@ -194,9 +194,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
@@ -220,18 +218,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   ubuntu-stage4-qtmods:
@@ -252,9 +246,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-
@@ -278,9 +270,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   ubuntu-stage5-qwt:
@@ -301,9 +291,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-qt6-APP-stage4-
@@ -327,18 +315,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   ubuntu-hpc:
@@ -359,9 +343,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -384,9 +366,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
@@ -410,9 +390,7 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
@@ -435,9 +413,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage2:
@@ -458,9 +434,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
@@ -483,9 +457,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage3:
@@ -506,9 +478,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
@@ -532,18 +502,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   macos-stage4-qtmods:
@@ -564,9 +530,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-
@@ -590,9 +554,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-stage5-qwt:
@@ -613,9 +575,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-qt6-APP-stage4-
@@ -639,18 +599,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
@@ -674,9 +630,7 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
@@ -699,9 +653,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-intel-stage2:
@@ -722,9 +674,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
@@ -747,9 +697,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-intel-stage3:
@@ -770,9 +718,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
@@ -796,18 +742,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   macos-intel-stage4-qtmods:
@@ -828,9 +770,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-
@@ -854,9 +794,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   macos-intel-stage5-qwt:
@@ -877,9 +815,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-macos-15-intel-qt6-APP-stage4-
@@ -903,18 +839,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   # ===========================================================================
@@ -940,9 +872,7 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
@@ -965,9 +895,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage2:
@@ -990,9 +918,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
@@ -1015,9 +941,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage3:
@@ -1040,9 +964,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-
@@ -1066,18 +988,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   rocky8-stage4-qtmods:
@@ -1100,9 +1018,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-
@@ -1126,9 +1042,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
   rocky8-stage5-qwt:
@@ -1151,9 +1065,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-qt6-APP-stage4-
@@ -1177,18 +1089,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
 
   rocky8-hpc:
@@ -1211,9 +1119,7 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
@@ -1236,7 +1142,50 @@ jobs:
         if: always()
         uses: actions/cache/save@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+  # ===========================================================================
+  # CLEANUP
+  # Deletes intermediate stage keys (stage1-stage5) after all platforms finish,
+  # keeping only the full-build keys. This prevents the repo from hitting the
+  # 10 GB cache limit and having entries evicted.
+  # Runs even if some platform jobs failed (so partial stage keys are cleaned up).
+  # ===========================================================================
+
+  cleanup-stage-caches:
+    name: "Delete intermediate stage cache keys"
+    if: always()
+    runs-on: ubuntu-24.04
+    needs:
+      - ubuntu-stage5-qwt
+      - ubuntu-hpc
+      - macos-stage5-qwt
+      - macos-intel-stage5-qwt
+      - rocky8-stage5-qwt
+      - rocky8-hpc
+    steps:
+      - name: Delete intermediate stage cache keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          delete_caches_with_prefix() {
+            local prefix="$1"
+            echo "Deleting caches matching prefix: ${prefix}"
+            gh cache list --repo "$REPO" --limit 100 --json key,id \
+              | jq -r ".[] | select(.key | startswith(\"${prefix}\")) | .id" \
+              | while read -r id; do
+                  echo "  Deleting cache id: ${id}"
+                  gh cache delete --repo "$REPO" "${id}" || true
+                done
+          }
+
+          # Delete all stage1-stage5 intermediate keys for all platforms and variants
+          for platform in ubuntu-24.04 macos-15 macos-15-intel rocky8; do
+            for variant in qt6 qt5-qwt630; do
+              for stage in stage1 stage2 stage3 stage4 stage5; do
+                delete_caches_with_prefix "vcpkg-${platform}-${variant}-APP-${stage}-"
+              done
+            done
+          done
