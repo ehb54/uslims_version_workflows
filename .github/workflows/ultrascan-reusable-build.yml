@@ -197,7 +197,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
