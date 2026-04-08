@@ -38,10 +38,25 @@
 # vcpkg re-downloads source tarballs on a cold start; no rebuild is triggered.
 #
 # CACHE QUOTA MANAGEMENT
-# Each stage deletes the previous stage's cache key after saving its own,
-# so only one intermediate key per platform exists at any time. The final
-# stage deletes its intermediate key after saving the full-build key.
-# The cleanup job handles any remaining keys as a safety net.
+# ----------------------
+# The staged design creates N intermediate cache entries during a warm run.
+# With macOS at ~1 GB per stage, naive accumulation exceeds the 10 GB quota.
+#
+# The solution is a "gate job" between each stage: a bare ubuntu-24.04 job
+# whose sole purpose is to delete the previous stage's cache key before the
+# next stage saves its (larger) key. This guarantees at most 2 keys exist
+# per platform at any point: the gate job deletes stageN-1 before stageN+1
+# saves, so the high-water mark is stageN + stageN+1 briefly overlapping.
+#
+# Gate jobs always run on ubuntu-24.04 (never in a container) so gh CLI is
+# always available. Rocky 8 build jobs run in rockylinux:8 containers where
+# gh is absent — gate jobs handle all deletions for Rocky 8 too.
+#
+# The cleanup-stage-caches job runs after all platforms finish and deletes:
+#   - Any remaining intermediate stage keys (safety net for failed gates)
+#   - Superseded full-build keys (same platform/variant prefix, old hash)
+#     to prevent two successive warm runs from each keeping a full-build key
+#
 # The caller workflow must grant actions: write permission for this to work.
 #
 # PLATFORMS
@@ -133,13 +148,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+  ubuntu-gate1:
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage1-base
+    steps:
+      - name: Delete stage 1 cache key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh cache list --repo "$REPO" --limit 100 --json key,id \
+            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   ubuntu-stage2:
     name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage1-base
+    needs: ubuntu-gate1
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -154,7 +186,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
@@ -177,23 +209,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 1)
-        if: always()
+  ubuntu-gate2:
+    name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
+    if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage2
+    steps:
+      - name: Delete stage 2 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   ubuntu-stage3:
     name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage2
+    needs: ubuntu-gate2
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -208,7 +247,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -232,17 +271,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
-
-      - name: Delete previous stage cache (stage 2)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
@@ -251,21 +280,28 @@ jobs:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete stage 3 cache (qt5 final)
-        if: always() && inputs.qt_variant != 'qt6'
+  ubuntu-gate3:
+    name: "ubuntu-24.04 / qt6 — Gate 3→4: delete stage 3"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage3
+    steps:
+      - name: Delete stage 3 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-qt6-APP-stage3-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   ubuntu-stage4-qtmods:
     name: "ubuntu-24.04 / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage3
+    needs: ubuntu-gate3
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -280,11 +316,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-
-            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
-            vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
+            vcpkg-ubuntu-24.04-qt6-APP-stage3-
+            vcpkg-ubuntu-24.04-qt6-APP-stage2-
+            vcpkg-ubuntu-24.04-qt6-APP-
 
       - name: Stage 4 — Qt modules + DB libs
         env:
@@ -304,23 +340,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 3)
-        if: always()
+  ubuntu-gate4:
+    name: "ubuntu-24.04 / qt6 — Gate 4→5: delete stage 4"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: ubuntu-stage4-qtmods
+    steps:
+      - name: Delete stage 4 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-qt6-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-ubuntu-24.04-qt6-APP-stage4-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   ubuntu-stage5-qwt:
     name: "ubuntu-24.04 / qt6 — Stage 5: Qwt"
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
-    needs: ubuntu-stage4-qtmods
+    needs: ubuntu-gate4
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -335,7 +378,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-qt6-APP-stage4-
             vcpkg-ubuntu-24.04-qt6-APP-stage3-
@@ -359,26 +402,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-
-      - name: Delete intermediate stage caches (stages 4 and 5)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          for stage in stage4 stage5; do
-            gh cache list --repo "$REPO" --limit 100 --json key,id \
-              | jq -r ".[] | select(.key | startswith(\"vcpkg-ubuntu-24.04-qt6-APP-${stage}-\")) | .id" \
-              | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
-          done
+          key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   ubuntu-hpc:
     name: "ubuntu-24.04 / qt6 — HPC: qtbase (minimal + zstd)"
@@ -399,7 +430,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-
@@ -422,10 +453,11 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
   # MACOS-15 arm64
+  # Gate jobs run on ubuntu-24.04 — BSD xargs on macOS lacks -r flag.
   # ===========================================================================
 
   macos-stage1-base:
@@ -446,7 +478,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
@@ -469,13 +501,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+  macos-gate1:
+    name: "macos-15 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
+    runs-on: ubuntu-24.04
+    needs: macos-stage1-base
+    steps:
+      - name: Delete stage 1 cache key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh cache list --repo "$REPO" --limit 100 --json key,id \
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-stage2:
     name: "macos-15 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
-    needs: macos-stage1-base
+    needs: macos-gate1
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -490,7 +539,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
@@ -513,23 +562,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 1)
-        if: always()
+  macos-gate2:
+    name: "macos-15 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
+    runs-on: ubuntu-24.04
+    needs: macos-stage2
+    steps:
+      - name: Delete stage 2 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-stage3:
     name: "macos-15 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)'
     runs-on: macos-15
-    needs: macos-stage2
+    needs: macos-gate2
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -544,7 +600,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
@@ -568,40 +624,37 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
-
-      - name: Delete previous stage cache (stage 2)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete stage 3 cache (qt5 final)
-        if: always() && inputs.qt_variant != 'qt6'
+  macos-gate3:
+    name: "macos-15 / qt6 — Gate 3→4: delete stage 3"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: macos-stage3
+    steps:
+      - name: Delete stage 3 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-qt6-APP-stage3-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-stage4-qtmods:
     name: "macos-15 / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15
-    needs: macos-stage3
+    needs: macos-gate3
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -616,11 +669,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-
-            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
-            vcpkg-macos-15-${{ inputs.qt_variant }}-APP-
+            vcpkg-macos-15-qt6-APP-stage3-
+            vcpkg-macos-15-qt6-APP-stage2-
+            vcpkg-macos-15-qt6-APP-
 
       - name: Stage 4 — Qt modules + DB libs
         env:
@@ -640,23 +693,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 3)
-        if: always()
+  macos-gate4:
+    name: "macos-15 / qt6 — Gate 4→5: delete stage 4"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: macos-stage4-qtmods
+    steps:
+      - name: Delete stage 4 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-qt6-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-qt6-APP-stage4-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-stage5-qwt:
     name: "macos-15 / qt6 — Stage 5: Qwt"
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-arm (macos-15)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15
-    needs: macos-stage4-qtmods
+    needs: macos-gate4
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -671,7 +731,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-qt6-APP-stage4-
             vcpkg-macos-15-qt6-APP-stage3-
@@ -695,29 +755,18 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-
-      - name: Delete intermediate stage caches (stages 4 and 5)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          for stage in stage4 stage5; do
-            gh cache list --repo "$REPO" --limit 100 --json key,id \
-              | jq -r ".[] | select(.key | startswith(\"vcpkg-macos-15-qt6-APP-${stage}-\")) | .id" \
-              | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
-          done
+          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
   # MACOS-15-INTEL x86_64
+  # Gate jobs run on ubuntu-24.04 — BSD xargs on macOS lacks -r flag.
   # ===========================================================================
 
   macos-intel-stage1-base:
@@ -738,7 +787,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
@@ -761,13 +810,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+  macos-intel-gate1:
+    name: "macos-15-intel / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
+    runs-on: ubuntu-24.04
+    needs: macos-intel-stage1-base
+    steps:
+      - name: Delete stage 1 cache key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh cache list --repo "$REPO" --limit 100 --json key,id \
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-intel-stage2:
     name: "macos-15-intel / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
     runs-on: macos-15-intel
-    needs: macos-intel-stage1-base
+    needs: macos-intel-gate1
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -782,7 +848,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
@@ -805,23 +871,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 1)
-        if: always()
+  macos-intel-gate2:
+    name: "macos-15-intel / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
+    if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
+    runs-on: ubuntu-24.04
+    needs: macos-intel-stage2
+    steps:
+      - name: Delete stage 2 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-intel-stage3:
     name: "macos-15-intel / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
     if: inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)'
     runs-on: macos-15-intel
-    needs: macos-intel-stage2
+    needs: macos-intel-gate2
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -836,7 +909,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
@@ -860,40 +933,37 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
-
-      - name: Delete previous stage cache (stage 2)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete stage 3 cache (qt5 final)
-        if: always() && inputs.qt_variant != 'qt6'
+  macos-intel-gate3:
+    name: "macos-15-intel / qt6 — Gate 3→4: delete stage 3"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: macos-intel-stage3
+    steps:
+      - name: Delete stage 3 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-qt6-APP-stage3-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-intel-stage4-qtmods:
     name: "macos-15-intel / qt6 — Stage 4: Qt modules + DB"
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15-intel
-    needs: macos-intel-stage3
+    needs: macos-intel-gate3
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -908,11 +978,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-
-            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
-            vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-
+            vcpkg-macos-15-intel-qt6-APP-stage3-
+            vcpkg-macos-15-intel-qt6-APP-stage2-
+            vcpkg-macos-15-intel-qt6-APP-
 
       - name: Stage 4 — Qt modules + DB libs
         env:
@@ -932,23 +1002,30 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 3)
-        if: always()
+  macos-intel-gate4:
+    name: "macos-15-intel / qt6 — Gate 4→5: delete stage 4"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: macos-intel-stage4-qtmods
+    steps:
+      - name: Delete stage 4 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-qt6-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-macos-15-intel-qt6-APP-stage4-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   macos-intel-stage5-qwt:
     name: "macos-15-intel / qt6 — Stage 5: Qwt"
     if: (inputs.platforms == 'all' || inputs.platforms == 'macos-intel (macos-15-intel)') && inputs.qt_variant == 'qt6'
     runs-on: macos-15-intel
-    needs: macos-intel-stage4-qtmods
+    needs: macos-intel-gate4
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -963,7 +1040,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-qt6-APP-stage4-
             vcpkg-macos-15-intel-qt6-APP-stage3-
@@ -987,29 +1064,18 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-
-      - name: Delete intermediate stage caches (stages 4 and 5)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          for stage in stage4 stage5; do
-            gh cache list --repo "$REPO" --limit 100 --json key,id \
-              | jq -r ".[] | select(.key | startswith(\"vcpkg-macos-15-intel-qt6-APP-${stage}-\")) | .id" \
-              | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
-          done
+          key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
   # ROCKY 8 x64 (rockylinux:8 container on ubuntu-24.04)
+  # Gate jobs run on bare ubuntu-24.04 (no container) so gh CLI is available.
   # ===========================================================================
 
   rocky8-stage1-base:
@@ -1032,7 +1098,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
@@ -1055,7 +1121,24 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+  rocky8-gate1:
+    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+    runs-on: ubuntu-24.04
+    needs: rocky8-stage1-base
+    steps:
+      - name: Delete stage 1 cache key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh cache list --repo "$REPO" --limit 100 --json key,id \
+            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   rocky8-stage2:
     name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
@@ -1063,7 +1146,7 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
-    needs: rocky8-stage1-base
+    needs: rocky8-gate1
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1078,7 +1161,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
@@ -1101,17 +1184,24 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 1)
-        if: always()
+  rocky8-gate2:
+    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
+    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+    runs-on: ubuntu-24.04
+    needs: rocky8-stage2
+    steps:
+      - name: Delete stage 2 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   rocky8-stage3:
     name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
@@ -1119,7 +1209,7 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
-    needs: rocky8-stage2
+    needs: rocky8-gate2
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1134,7 +1224,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
@@ -1158,34 +1248,31 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
-
-      - name: Delete previous stage cache (stage 2)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete stage 3 cache (qt5 final)
-        if: always() && inputs.qt_variant != 'qt6'
+  rocky8-gate3:
+    name: "rocky8-x64 / qt6 — Gate 3→4: delete stage 3"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: rocky8-stage3
+    steps:
+      - name: Delete stage 3 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-qt6-APP-stage3-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   rocky8-stage4-qtmods:
     name: "rocky8-x64 / qt6 — Stage 4: Qt modules + DB"
@@ -1193,7 +1280,7 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
-    needs: rocky8-stage3
+    needs: rocky8-gate3
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1208,11 +1295,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
+            vcpkg-rocky8-qt6-APP-stage3-
+            vcpkg-rocky8-qt6-APP-stage2-
+            vcpkg-rocky8-qt6-APP-
 
       - name: Stage 4 — Qt modules + DB libs
         env:
@@ -1232,17 +1319,24 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-      - name: Delete previous stage cache (stage 3)
-        if: always()
+  rocky8-gate4:
+    name: "rocky8-x64 / qt6 — Gate 4→5: delete stage 4"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+    runs-on: ubuntu-24.04
+    needs: rocky8-stage4-qtmods
+    steps:
+      - name: Delete stage 4 cache key
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-qt6-APP-stage3-")) | .id' \
-            | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
+            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-qt6-APP-stage4-")) | .id' \
+            | while read -r id; do
+                gh cache delete --repo "$REPO" "$id" || true
+              done
 
   rocky8-stage5-qwt:
     name: "rocky8-x64 / qt6 — Stage 5: Qwt"
@@ -1250,7 +1344,7 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: rockylinux:8
-    needs: rocky8-stage4-qtmods
+    needs: rocky8-gate4
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1265,7 +1359,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-rocky8-qt6-APP-stage4-
             vcpkg-rocky8-qt6-APP-stage3-
@@ -1289,26 +1383,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-
-      - name: Delete intermediate stage caches (stages 4 and 5)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          for stage in stage4 stage5; do
-            gh cache list --repo "$REPO" --limit 100 --json key,id \
-              | jq -r ".[] | select(.key | startswith(\"vcpkg-rocky8-qt6-APP-${stage}-\")) | .id" \
-              | xargs -r -I{} gh cache delete --repo "$REPO" {} || true
-          done
+          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   rocky8-hpc:
     name: "rocky8-x64 / qt6 — HPC: qtbase (minimal + zstd)"
@@ -1331,7 +1413,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**') }}
+          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
@@ -1354,19 +1436,21 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
   # CLEANUP
-  # Deletes intermediate stage keys (stage1-stage5) after all platforms finish,
-  # keeping only the full-build keys. This prevents the repo from hitting the
-  # 10 GB cache limit and having entries evicted.
-  # Runs even if some platform jobs failed (so partial stage keys are cleaned up).
+  # Runs after all platforms finish. Deletes:
+  #   1. Any remaining intermediate stage keys (safety net for failed gates)
+  #   2. Superseded full-build keys: same platform/variant/profile prefix but
+  #      a different (older) hash. These accumulate across warm runs when the
+  #      hash inputs change (e.g. a commit modifies vcpkg.json). Without this,
+  #      two successive warm runs each leave a full-build key, doubling quota.
   # Requires the caller workflow to grant actions: write permission.
   # ===========================================================================
 
   cleanup-stage-caches:
-    name: "Delete intermediate stage cache keys"
+    name: "Delete stage keys and superseded full-build keys"
     if: always()
     runs-on: ubuntu-24.04
     needs:
@@ -1377,27 +1461,50 @@ jobs:
       - rocky8-stage5-qwt
       - rocky8-hpc
     steps:
-      - name: Delete intermediate stage cache keys
+      - name: Delete stage keys and superseded full-build keys
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          delete_caches_with_prefix() {
+          set -euo pipefail
+
+          # Delete all cache entries whose keys start with a given prefix.
+          delete_by_prefix() {
             local prefix="$1"
-            echo "Deleting caches matching prefix: ${prefix}"
             gh cache list --repo "$REPO" --limit 100 --json key,id \
               | jq -r ".[] | select(.key | startswith(\"${prefix}\")) | .id" \
               | while read -r id; do
-                  echo "  Deleting cache id: ${id}"
+                  echo "  Deleting ${id}"
                   gh cache delete --repo "$REPO" "${id}" || true
                 done
           }
 
-          # Delete all stage1-stage5 intermediate keys for all platforms and variants
+          # 1. Delete all remaining intermediate stage keys (gate safety net).
+          echo "=== Deleting intermediate stage keys ==="
           for platform in ubuntu-24.04 macos-15 macos-15-intel rocky8; do
             for variant in qt6 qt5-qwt630; do
               for stage in stage1 stage2 stage3 stage4 stage5; do
-                delete_caches_with_prefix "vcpkg-${platform}-${variant}-APP-${stage}-"
+                delete_by_prefix "vcpkg-${platform}-${variant}-APP-${stage}-"
+              done
+            done
+          done
+
+          # 2. Delete superseded full-build keys (same prefix, old hash).
+          # Keeps only the entry whose key exactly matches the current hash.
+          echo "=== Deleting superseded full-build keys ==="
+          CURRENT_HASH="${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}"
+
+          for platform in ubuntu-24.04 macos-15 macos-15-intel rocky8; do
+            for variant in qt6 qt5-qwt630; do
+              for profile in APP HPC; do
+                prefix="vcpkg-${platform}-${variant}-${profile}-"
+                current_key="${prefix}${CURRENT_HASH}"
+                gh cache list --repo "$REPO" --limit 100 --json key,id \
+                  | jq -r ".[] | select(.key | startswith(\"${prefix}\")) | select(.key != \"${current_key}\") | .id" \
+                  | while read -r id; do
+                      echo "  Deleting superseded ${id}"
+                      gh cache delete --repo "$REPO" "${id}" || true
+                    done
               done
             done
           done
