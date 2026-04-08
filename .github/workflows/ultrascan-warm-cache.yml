@@ -96,6 +96,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: warm-cache-${{ github.ref }}-${{ inputs.qt_variant }}-${{ inputs.platforms }}
