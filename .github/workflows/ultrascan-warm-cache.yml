@@ -1485,9 +1485,22 @@ jobs:
                 done
           }
 
+          # Determine which cache platform labels to operate on.
+          # When warming a single platform, scope cleanup to that platform only
+          # so we don't stomp on stage keys for other platforms warming in parallel.
+          case "${{ inputs.platforms }}" in
+            "all")                          PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel rocky8" ;;
+            "ubuntu-x64 (ubuntu-24.04)")    PLATFORMS="ubuntu-24.04" ;;
+            "macos-arm (macos-15)")         PLATFORMS="macos-15" ;;
+            "macos-intel (macos-15-intel)") PLATFORMS="macos-15-intel" ;;
+            "rocky8-x64")                   PLATFORMS="rocky8" ;;
+            *)                              PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel rocky8" ;;
+          esac
+          echo "Cleaning platforms: $PLATFORMS"
+
           # 1. Delete all remaining intermediate stage keys (gate safety net).
           echo "=== Deleting intermediate stage keys ==="
-          for platform in ubuntu-24.04 macos-15 macos-15-intel rocky8; do
+          for platform in $PLATFORMS; do
             for variant in qt6 qt5-qwt630; do
               for stage in stage1 stage2 stage3 stage4 stage5; do
                 delete_by_prefix "vcpkg-${platform}-${variant}-APP-${stage}-"
@@ -1500,7 +1513,7 @@ jobs:
           echo "=== Deleting superseded full-build keys ==="
           CURRENT_HASH="${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}"
 
-          for platform in ubuntu-24.04 macos-15 macos-15-intel rocky8; do
+          for platform in $PLATFORMS; do
             for variant in qt6 qt5-qwt630; do
               for profile in APP HPC; do
                 prefix="vcpkg-${platform}-${variant}-${profile}-"
