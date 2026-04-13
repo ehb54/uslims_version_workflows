@@ -36,11 +36,11 @@
 # cache_os_label  (optional, default: same as runner)
 #                 Override the OS label used in vcpkg cache keys.
 #                 Use this when the actual runner differs from the target OS,
-#                 e.g. building Rocky 8 inside a container on ubuntu-24.04:
+#                 e.g. building Oracle Linux 8 inside a container on ubuntu-24.04:
 #                   runner: ubuntu-24.04
-#                   cache_os_label: rocky8
-#                 When set to "rocky8" a dedicated job runs the build inside
-#                 a rockylinux:8 container. This keeps Rocky 8 binaries
+#                   cache_os_label: oraclelinux8
+#                 When set to "oraclelinux8" a dedicated job runs the build inside
+#                 an oraclelinux:8 container. This keeps Oracle Linux 8 binaries
 #                 isolated from Ubuntu binaries (different glibc version).
 #
 # ref             (optional, default: "main")
@@ -91,11 +91,11 @@
 #         runner: ubuntu-24.04
 #         qt_variant: qt5-qwt630
 #
-#     build-rocky8:
+#     build-oraclelinux8:
 #       uses: ./.github/workflows/ultrascan-reusable-build.yml
 #       with:
 #         runner: ubuntu-24.04
-#         cache_os_label: rocky8
+#         cache_os_label: oraclelinux8
 #         qt_variant: qt6
 #
 #     build-macos-arm:
@@ -171,11 +171,11 @@ jobs:
   # ===========================================================================
   # STANDARD BUILD
   # Runs on the specified runner natively (Ubuntu, macOS, Windows).
-  # Skipped when cache_os_label=rocky8 — that uses the container job below.
+  # Skipped when cache_os_label=oraclelinux8 — that uses the container job below.
   # ===========================================================================
   build:
     name: ${{ inputs.runner }} / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
-    if: inputs.cache_os_label != 'rocky8'
+    if: inputs.cache_os_label != 'oraclelinux8'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 360
 
@@ -318,19 +318,18 @@ jobs:
           retention-days: ${{ inputs.artifact_retention_days }}
 
   # ===========================================================================
-  # ROCKY 8 BUILD
-  # Runs inside a rockylinux:8 container on the specified runner (ubuntu-24.04).
+  # ORACLE LINUX 8 BUILD
+  # Runs inside an oraclelinux:8 container on the specified runner (ubuntu-24.04).
   # The container: key must be static — it cannot be driven from an input —
-  # so Rocky 8 requires this dedicated job.
-  # Respects inputs.qt_variant — qt5-qwt630 and qt6 are supported.
-  # Cache keys use "rocky8" to isolate from Ubuntu binaries (different glibc).
+  # so Oracle Linux 8 requires this dedicated job.
+  # Cache keys use "oraclelinux8" to isolate from Ubuntu binaries (different glibc).
   # ===========================================================================
-  build-rocky8:
-    name: rocky8-x64 / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
-    if: inputs.cache_os_label == 'rocky8'
+  build-oraclelinux8:
+    name: oraclelinux8-x64 / ${{ inputs.profile }} / ${{ inputs.qt_variant }}
+    if: inputs.cache_os_label == 'oraclelinux8'
     runs-on: ${{ inputs.runner }}
     container:
-      image: rockylinux:8
+      image: oraclelinux:8
     timeout-minutes: 360
 
     steps:
@@ -414,7 +413,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-rocky8-${{ steps.ts.outputs.value }}
+          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8-${{ steps.ts.outputs.value }}
           path: |
             build/**/UltraScan3-*-Linux-*.tar.gz
           if-no-files-found: warn

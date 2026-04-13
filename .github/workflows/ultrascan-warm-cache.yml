@@ -49,8 +49,8 @@
 # saves, so the high-water mark is stageN + stageN+1 briefly overlapping.
 #
 # Gate jobs always run on ubuntu-24.04 (never in a container) so gh CLI is
-# always available. Rocky 8 build jobs run in rockylinux:8 containers where
-# gh is absent — gate jobs handle all deletions for Rocky 8 too.
+# always available. Oracle Linux 8 build jobs run in oraclelinux:8 containers
+# where gh is absent — gate jobs handle all deletions for Oracle Linux 8 too.
 #
 # The cleanup-stage-caches job runs after all platforms finish and deletes:
 #   - Any remaining intermediate stage keys (safety net for failed gates)
@@ -61,10 +61,10 @@
 #
 # PLATFORMS
 # ---------
-#   ubuntu-x64    (ubuntu-24.04)   / qt6 or qt5-qwt630
-#   macos-arm     (macos-15)       / qt6 or qt5-qwt630
-#   macos-intel   (macos-15-intel) / qt6 or qt5-qwt630
-#   rocky8-x64    (rockylinux:8)   / qt6 or qt5-qwt630
+#   ubuntu-x64       (ubuntu-24.04)   / qt6 or qt5-qwt630
+#   macos-arm        (macos-15)       / qt6 or qt5-qwt630
+#   macos-intel      (macos-15-intel) / qt6 or qt5-qwt630
+#   oraclelinux8-x64 (oraclelinux:8)  / qt6 or qt5-qwt630
 #
 # TRIGGERS
 # --------
@@ -89,7 +89,7 @@ on:
         default: qt6
 
       platforms:
-        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | macos-intel (macos-15-intel) | rocky8-x64"
+        description: "Platforms to warm: all | ubuntu-x64 (ubuntu-24.04) | macos-arm (macos-15) | macos-intel (macos-15-intel) | oraclelinux8-x64"
         required: false
         type: string
         default: all
@@ -1075,16 +1075,16 @@ jobs:
           key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
-  # ROCKY 8 x64 (rockylinux:8 container on ubuntu-24.04)
+  # ORACLE LINUX 8 x64 (oraclelinux:8 container on ubuntu-24.04)
   # Gate jobs run on bare ubuntu-24.04 (no container) so gh CLI is available.
   # ===========================================================================
 
-  rocky8-stage1-base:
-    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 1: base deps"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+  oraclelinux8-stage1-base:
+    name: "oraclelinux8-x64 / ${{ inputs.qt_variant }} — Stage 1: base deps"
+    if: inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
+      image: oraclelinux:8
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1099,10 +1099,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
 
       - name: Stage 1 — base deps
         env:
@@ -1122,13 +1122,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-  rocky8-gate1:
-    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+  oraclelinux8-gate1:
+    name: "oraclelinux8-x64 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
+    if: inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64'
     runs-on: ubuntu-24.04
-    needs: rocky8-stage2
+    needs: oraclelinux8-stage2
     steps:
       - name: Delete stage 1 cache key
         env:
@@ -1136,18 +1136,18 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
+            | jq -r '.[] | select(.key | startswith("vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-")) | .id' \
             | while read -r id; do
                 gh cache delete --repo "$REPO" "$id" || true
               done
 
-  rocky8-stage2:
-    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+  oraclelinux8-stage2:
+    name: "oraclelinux8-x64 / ${{ inputs.qt_variant }} — Stage 2: ${{ inputs.qt_variant == 'qt6' && 'qtbase' || 'qt5 + modules' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
-    needs: rocky8-stage1-base
+      image: oraclelinux:8
+    needs: oraclelinux8-stage1-base
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1162,10 +1162,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
 
       - name: Stage 2
         env:
@@ -1185,13 +1185,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-  rocky8-gate2:
-    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+  oraclelinux8-gate2:
+    name: "oraclelinux8-x64 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
+    if: inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64'
     runs-on: ubuntu-24.04
-    needs: rocky8-stage3
+    needs: oraclelinux8-stage3
     steps:
       - name: Delete stage 2 cache key
         env:
@@ -1199,18 +1199,18 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
+            | jq -r '.[] | select(.key | startswith("vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-")) | .id' \
             | while read -r id; do
                 gh cache delete --repo "$REPO" "$id" || true
               done
 
-  rocky8-stage3:
-    name: "rocky8-x64 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
-    if: inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64'
+  oraclelinux8-stage3:
+    name: "oraclelinux8-x64 / ${{ inputs.qt_variant }} — Stage 3: ${{ inputs.qt_variant == 'qt6' && 'qtmultimedia + qtdeclarative' || 'Qwt' }}"
+    if: inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
-    needs: rocky8-stage2
+      image: oraclelinux:8
+    needs: oraclelinux8-stage2
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1225,11 +1225,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage2-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
 
       - name: Stage 3
         env:
@@ -1249,20 +1249,20 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
         if: always() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-  rocky8-gate3:
-    name: "rocky8-x64 / qt6 — Gate 3→4: delete stage 3"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+  oraclelinux8-gate3:
+    name: "oraclelinux8-x64 / qt6 — Gate 3→4: delete stage 3"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
-    needs: rocky8-stage4-qtmods
+    needs: oraclelinux8-stage4-qtmods
     steps:
       - name: Delete stage 3 cache key
         env:
@@ -1270,18 +1270,18 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-qt6-APP-stage3-")) | .id' \
+            | jq -r '.[] | select(.key | startswith("vcpkg-oraclelinux8-qt6-APP-stage3-")) | .id' \
             | while read -r id; do
                 gh cache delete --repo "$REPO" "$id" || true
               done
 
-  rocky8-stage4-qtmods:
-    name: "rocky8-x64 / qt6 — Stage 4: Qt modules + DB"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+  oraclelinux8-stage4-qtmods:
+    name: "oraclelinux8-x64 / qt6 — Stage 4: Qt modules + DB"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
-    needs: rocky8-stage3
+      image: oraclelinux:8
+    needs: oraclelinux8-stage3
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1296,11 +1296,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-qt6-APP-stage3-
-            vcpkg-rocky8-qt6-APP-stage2-
-            vcpkg-rocky8-qt6-APP-
+            vcpkg-oraclelinux8-qt6-APP-stage3-
+            vcpkg-oraclelinux8-qt6-APP-stage2-
+            vcpkg-oraclelinux8-qt6-APP-
 
       - name: Stage 4 — Qt modules + DB libs
         env:
@@ -1320,13 +1320,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-  rocky8-gate4:
-    name: "rocky8-x64 / qt6 — Gate 4→5: delete stage 4"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+  oraclelinux8-gate4:
+    name: "oraclelinux8-x64 / qt6 — Gate 4→5: delete stage 4"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
-    needs: rocky8-stage5-qwt
+    needs: oraclelinux8-stage5-qwt
     steps:
       - name: Delete stage 4 cache key
         env:
@@ -1334,18 +1334,18 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh cache list --repo "$REPO" --limit 100 --json key,id \
-            | jq -r '.[] | select(.key | startswith("vcpkg-rocky8-qt6-APP-stage4-")) | .id' \
+            | jq -r '.[] | select(.key | startswith("vcpkg-oraclelinux8-qt6-APP-stage4-")) | .id' \
             | while read -r id; do
                 gh cache delete --repo "$REPO" "$id" || true
               done
 
-  rocky8-stage5-qwt:
-    name: "rocky8-x64 / qt6 — Stage 5: Qwt"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+  oraclelinux8-stage5-qwt:
+    name: "oraclelinux8-x64 / qt6 — Stage 5: Qwt"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
-    needs: rocky8-stage4-qtmods
+      image: oraclelinux:8
+    needs: oraclelinux8-stage4-qtmods
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1360,11 +1360,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-qt6-APP-stage4-
-            vcpkg-rocky8-qt6-APP-stage3-
-            vcpkg-rocky8-qt6-APP-
+            vcpkg-oraclelinux8-qt6-APP-stage4-
+            vcpkg-oraclelinux8-qt6-APP-stage3-
+            vcpkg-oraclelinux8-qt6-APP-
 
       - name: Stage 5 — Qwt + QwtPlot3D
         env:
@@ -1384,22 +1384,22 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
         if: always()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
-  rocky8-hpc:
-    name: "rocky8-x64 / qt6 — HPC: qtbase (minimal + zstd)"
-    if: (inputs.platforms == 'all' || inputs.platforms == 'rocky8-x64') && inputs.qt_variant == 'qt6'
+  oraclelinux8-hpc:
+    name: "oraclelinux8-x64 / qt6 — HPC: qtbase (minimal + zstd)"
+    if: (inputs.platforms == 'all' || inputs.platforms == 'oraclelinux8-x64') && inputs.qt_variant == 'qt6'
     runs-on: ubuntu-24.04
     container:
-      image: rockylinux:8
-    needs: rocky8-stage1-base
+      image: oraclelinux:8
+    needs: oraclelinux8-stage1-base
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -1414,10 +1414,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-stage1-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-APP-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
 
       - name: HPC stage — qtbase with zstd
         env:
@@ -1437,7 +1437,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   # ===========================================================================
   # CLEANUP
@@ -1459,8 +1459,8 @@ jobs:
       - ubuntu-hpc
       - macos-stage5-qwt
       - macos-intel-stage5-qwt
-      - rocky8-stage5-qwt
-      - rocky8-hpc
+      - oraclelinux8-stage5-qwt
+      - oraclelinux8-hpc
     steps:
       - uses: actions/checkout@v5
         with:
@@ -1489,12 +1489,12 @@ jobs:
           # When warming a single platform, scope cleanup to that platform only
           # so we don't stomp on stage keys for other platforms warming in parallel.
           case "${{ inputs.platforms }}" in
-            "all")                          PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel rocky8" ;;
+            "all")                          PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel oraclelinux8" ;;
             "ubuntu-x64 (ubuntu-24.04)")    PLATFORMS="ubuntu-24.04" ;;
             "macos-arm (macos-15)")         PLATFORMS="macos-15" ;;
             "macos-intel (macos-15-intel)") PLATFORMS="macos-15-intel" ;;
-            "rocky8-x64")                   PLATFORMS="rocky8" ;;
-            *)                              PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel rocky8" ;;
+            "oraclelinux8-x64")             PLATFORMS="oraclelinux8" ;;
+            *)                              PLATFORMS="ubuntu-24.04 macos-15 macos-15-intel oraclelinux8" ;;
           esac
           echo "Cleaning platforms: $PLATFORMS"
 
