@@ -33,9 +33,16 @@
 # ultrascan-reusable-build.yml restores, so warmed caches are used
 # transparently by full builds with no changes to that workflow.
 #
-# Only the binary cache (us3-vcpkg-cache) is saved — not the downloads cache.
-# This halves cache entry size and keeps the repo under the 10 GB cache limit.
-# vcpkg re-downloads source tarballs on a cold start; no rebuild is triggered.
+# Only the binary cache (us3-vcpkg-cache) is saved for most platforms — not
+# the downloads cache. This keeps cache sizes small. vcpkg re-downloads source
+# tarballs on a cold start; no rebuild is triggered.
+#
+# EXCEPTION: oraclelinux8 container jobs have no outbound internet access to
+# GitHub/upstream hosts for source tarball downloads. Each ubuntu stage job
+# therefore saves a rolling downloads cache (vcpkg-downloads-linux-*) which
+# oraclelinux8 stage jobs restore before running warm-cache.sh. Source
+# tarballs are platform-agnostic so ubuntu's downloads work for oraclelinux8.
+# Once the oraclelinux8 binary cache is fully warm, downloads are not needed.
 #
 # CACHE QUOTA MANAGEMENT
 # ----------------------
@@ -151,6 +158,13 @@ jobs:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
+      - name: Save vcpkg downloads cache (shared with container platforms)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+
   ubuntu-gate1:
     name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Gate 1→2: delete stage 1"
     if: inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)'
@@ -211,6 +225,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Save vcpkg downloads cache (shared with container platforms)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
 
   ubuntu-gate2:
     name: "ubuntu-24.04 / ${{ inputs.qt_variant }} — Gate 2→3: delete stage 2"
@@ -281,6 +302,13 @@ jobs:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
+      - name: Save vcpkg downloads cache (shared with container platforms)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+
   ubuntu-gate3:
     name: "ubuntu-24.04 / qt6 — Gate 3→4: delete stage 3"
     if: (inputs.platforms == 'all' || inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)') && inputs.qt_variant == 'qt6'
@@ -342,6 +370,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Save vcpkg downloads cache (shared with container platforms)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
 
   ubuntu-gate4:
     name: "ubuntu-24.04 / qt6 — Gate 4→5: delete stage 4"
@@ -411,6 +446,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Save vcpkg downloads cache (shared with container platforms)
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
 
   ubuntu-hpc:
     name: "ubuntu-24.04 / qt6 — HPC: qtbase (minimal + zstd)"
@@ -1104,6 +1146,18 @@ jobs:
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
 
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
+
       - name: Stage 1 — base deps
         env:
           CI: "true"
@@ -1166,6 +1220,18 @@ jobs:
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
+
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
 
       - name: Stage 2
         env:
@@ -1230,6 +1296,18 @@ jobs:
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
+
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
 
       - name: Stage 3
         env:
@@ -1302,6 +1380,18 @@ jobs:
             vcpkg-oraclelinux8-qt6-APP-stage2-
             vcpkg-oraclelinux8-qt6-APP-
 
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
+
       - name: Stage 4 — Qt modules + DB libs
         env:
           CI: "true"
@@ -1366,6 +1456,18 @@ jobs:
             vcpkg-oraclelinux8-qt6-APP-stage3-
             vcpkg-oraclelinux8-qt6-APP-
 
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
+
       - name: Stage 5 — Qwt + QwtPlot3D
         env:
           CI: "true"
@@ -1418,6 +1520,18 @@ jobs:
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-
+
+      - name: Restore vcpkg downloads cache (from ubuntu warm run)
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-downloads
+          key: vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage5
+          restore-keys: |
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage4
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage3
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage2
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-stage1
+            vcpkg-downloads-linux-${{ inputs.qt_variant }}-
 
       - name: HPC stage — qtbase with zstd
         env:
