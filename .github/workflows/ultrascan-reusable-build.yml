@@ -348,10 +348,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
-            vcpkg-rocky8-${{ inputs.qt_variant }}-${{ inputs.profile }}-
-            vcpkg-rocky8-${{ inputs.qt_variant }}-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-${{ inputs.profile }}-
+            vcpkg-oraclelinux8-${{ inputs.qt_variant }}-
 
       - name: Show restored vcpkg cache state
         shell: bash
