@@ -225,18 +225,70 @@ jobs:
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
 
-      - name: Enforce exact cache hit (Unix)
+      - name: Restore vcpkg binary cache (Unix) — retry 1
         if: runner.os != 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-unix.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-unix-r1
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache (Unix) — retry 1 fetch
+        if: runner.os != 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-unix.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-unix-r1-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Restore vcpkg binary cache (Unix) — retry 2
+        if: runner.os != 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-unix.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-unix-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-unix-r2
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache (Unix) — retry 2 fetch
+        if: runner.os != 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-unix.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-unix-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-unix-r2-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Enforce exact cache hit (Unix)
+        if: runner.os != 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-unix.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-unix-r1-fetch.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-unix-r2-fetch.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          echo "::error::require_exact_cache_hit is true but vcpkg cache was not an exact hit (cache-hit=${{ steps.vcpkg-cache-restore-unix.outputs.cache-hit }}). Aborting build."
+          echo "::error::vcpkg cache not found after 3 attempts (require_exact_cache_hit=true). Cache must be pre-warmed before release. Aborting build."
           exit 1
 
-      - name: Enforce exact cache hit (Windows)
+      - name: Restore vcpkg binary cache (Windows) — retry 1
         if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-windows-r1
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache (Windows) — retry 1 fetch
+        if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-windows-r1-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Users\runneradmin\.vcpkg-cache
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+      - name: Restore vcpkg binary cache (Windows) — retry 2
+        if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-windows-r2
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache (Windows) — retry 2 fetch
+        if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-windows-r2-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Users\runneradmin\.vcpkg-cache
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+
+      - name: Enforce exact cache hit (Windows)
+        if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r1-fetch.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r2-fetch.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          echo "::error::require_exact_cache_hit is true but vcpkg cache was not an exact hit (cache-hit=${{ steps.vcpkg-cache-restore-windows.outputs.cache-hit }}). Aborting build."
+          echo "::error::vcpkg cache not found after 3 attempts (require_exact_cache_hit=true). Cache must be pre-warmed before release. Aborting build."
           exit 1
 
       - name: Show restored vcpkg cache state (Unix)
@@ -379,11 +431,37 @@ jobs:
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-
 
-      - name: Enforce exact cache hit
+      - name: Restore vcpkg binary cache — retry 1
         if: inputs.require_exact_cache_hit && steps.vcpkg-cache-restore.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-r1
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache — retry 1 fetch
+        if: inputs.require_exact_cache_hit && steps.vcpkg-cache-restore.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-r1-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Restore vcpkg binary cache — retry 2
+        if: inputs.require_exact_cache_hit && steps.vcpkg-cache-restore.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-r2
+        shell: bash
+        run: sleep 30
+      - name: Restore vcpkg binary cache — retry 2 fetch
+        if: inputs.require_exact_cache_hit && steps.vcpkg-cache-restore.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-r1-fetch.outputs.cache-hit != 'true'
+        id: vcpkg-cache-restore-r2-fetch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+
+      - name: Enforce exact cache hit
+        if: inputs.require_exact_cache_hit && steps.vcpkg-cache-restore.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-r1-fetch.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-r2-fetch.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          echo "::error::require_exact_cache_hit is true but vcpkg cache was not an exact hit (cache-hit=${{ steps.vcpkg-cache-restore.outputs.cache-hit }}). Aborting build."
+          echo "::error::vcpkg cache not found after 3 attempts (require_exact_cache_hit=true). Cache must be pre-warmed before release. Aborting build."
           exit 1
 
       - name: Show restored vcpkg cache state
