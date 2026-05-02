@@ -77,7 +77,8 @@
 # OUTPUT ARTIFACTS
 # ----------------
 # A platform-native package is always produced and uploaded:
-#   Linux   -> build/<preset>/UltraScan3-*-Linux-*.tar.gz
+#   Linux   -> build/<preset>/UltraScan3-*-Linux-*.tar.xz
+#              build/<preset>/UltraScan3-HPC-*-Linux-*.tar.xz  (HPC profile)
 #   macOS   -> build/<preset>/UltraScan3-*-macOS.pkg
 #              build/<preset>/UltraScan3-HPC-*-macOS-*.tar.gz  (HPC profile)
 #   Windows -> build/<preset>/UltraScan3-*-Windows.exe
@@ -388,7 +389,7 @@ jobs:
         with:
           name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-${{ steps.ts.outputs.value }}
           path: |
-            build/**/UltraScan3-*-Linux-*.tar.gz
+            build/**/UltraScan3-*-Linux-*.tar.xz
             build/**/UltraScan3-*-macOS.pkg
             build/**/UltraScan3-HPC-*-macOS-*.tar.gz
             build/**/UltraScan3-*-Windows.exe
@@ -526,6 +527,6 @@ jobs:
         with:
           name: ${{ inputs.artifact_name_prefix }}-oraclelinux8-${{ steps.ts.outputs.value }}
           path: |
-            build/**/UltraScan3-*-Linux-*.tar.gz
+            build/**/UltraScan3-*-Linux-*.tar.xz
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days }}
