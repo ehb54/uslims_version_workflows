@@ -275,7 +275,7 @@ jobs:
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: always() && inputs.qt_variant != 'qt6'
+        if: success() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -406,7 +406,7 @@ jobs:
           key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -450,7 +450,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (HPC full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -628,7 +628,7 @@ jobs:
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: always() && inputs.qt_variant != 'qt6'
+        if: success() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -759,7 +759,7 @@ jobs:
           key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -937,7 +937,7 @@ jobs:
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: always() && inputs.qt_variant != 'qt6'
+        if: success() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -1068,7 +1068,7 @@ jobs:
           key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -1259,7 +1259,7 @@ jobs:
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
-        if: always() && inputs.qt_variant != 'qt6'
+        if: success() && inputs.qt_variant != 'qt6'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -1394,7 +1394,7 @@ jobs:
           key: vcpkg-oraclelinux8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
@@ -1440,7 +1440,7 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (HPC full-build key)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
