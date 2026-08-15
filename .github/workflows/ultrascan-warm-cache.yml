@@ -125,7 +125,9 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -145,10 +147,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   ubuntu-gate1:
@@ -186,7 +190,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -206,10 +212,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   ubuntu-gate2:
@@ -247,7 +255,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage2-
@@ -268,10 +278,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
@@ -316,7 +328,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-qt6-APP-stage3-
@@ -337,10 +351,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   ubuntu-gate4:
@@ -378,7 +394,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-qt6-APP-stage4-
@@ -399,10 +417,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 5)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
@@ -430,7 +450,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-ubuntu-24.04-${{ inputs.qt_variant }}-APP-stage1-
@@ -478,7 +500,9 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
@@ -498,10 +522,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-gate1:
@@ -539,7 +565,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage1-
@@ -559,10 +587,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-gate2:
@@ -600,7 +630,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage2-
@@ -621,10 +653,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
@@ -669,7 +703,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-qt6-APP-stage3-
@@ -690,10 +726,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-gate4:
@@ -731,7 +769,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-qt6-APP-stage4-
@@ -752,10 +792,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 5)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
@@ -787,7 +829,9 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
@@ -807,10 +851,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-intel-gate1:
@@ -848,7 +894,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage1-
@@ -868,10 +916,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-intel-gate2:
@@ -909,7 +959,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage2-
@@ -930,10 +982,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
@@ -978,7 +1032,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-qt6-APP-stage3-
@@ -999,10 +1055,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   macos-intel-gate4:
@@ -1040,7 +1098,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-macos-15-intel-qt6-APP-stage4-
@@ -1061,10 +1121,12 @@ jobs:
         run: rm -rf "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 5)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-macos-15-intel-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
@@ -1098,7 +1160,9 @@ jobs:
       - name: Restore vcpkg cache (stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
@@ -1125,10 +1189,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 1)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   oraclelinux8-gate1:
@@ -1168,7 +1234,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
@@ -1188,10 +1256,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 2)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   oraclelinux8-gate2:
@@ -1231,7 +1301,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 2)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage2-
@@ -1252,10 +1324,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 3)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key, qt5 only)
@@ -1302,7 +1376,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 3)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-qt6-APP-stage3-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-qt6-APP-stage3-
@@ -1323,10 +1399,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 4)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
   oraclelinux8-gate4:
@@ -1366,7 +1444,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 4)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-qt6-APP-stage4-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-qt6-APP-stage4-
@@ -1387,10 +1467,12 @@ jobs:
         run: rm -rf "$HOME/us3-scratch/vcpkg/buildtrees" "$HOME/vcpkg/buildtrees" || true
 
       - name: Save vcpkg cache (stage 5)
-        if: always()
+        if: success()
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-qt6-APP-stage5-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
 
       - name: Save vcpkg cache (full-build key)
@@ -1420,7 +1502,9 @@ jobs:
       - name: Restore vcpkg cache (through stage 1)
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
+          path: |
+            ${{ runner.temp }}/us3-vcpkg-cache
+            ${{ runner.temp }}/us3-vcpkg-downloads
           key: vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           restore-keys: |
             vcpkg-oraclelinux8-${{ inputs.qt_variant }}-APP-stage1-
