@@ -66,10 +66,12 @@
 #
 # artifact_name_prefix  (optional)
 #                 Prefix used when uploading packaged build artifacts.
-#                 The reusable workflow appends the runner/platform name
-#                 and a short UTC timestamp.
-#                 Final name: "<artifact_name_prefix>-<runner>-<UTC timestamp>"
-#                 Example: "ondemand-214-main-APP-qt6-ubuntu-20260309-1445"
+#                 The reusable workflow appends the runner/platform name and
+#                 run attempt so rerunning a workflow cannot collide with its
+#                 immutable artifacts from an earlier attempt.
+#                 Final name: "<artifact_name_prefix>-<runner>-attempt-<n>"
+#                 Callers should put stable build identity (version, run, SHA)
+#                 in the prefix rather than relying on a wall-clock timestamp.
 #
 # artifact_retention_days  (optional, default: 7)
 #                 Days to retain uploaded artifacts.
@@ -377,23 +379,40 @@ jobs:
           path: C:\Users\runneradmin\.vcpkg-cache
           key: ${{ steps.vcpkg-cache-restore-windows.outputs.cache-primary-key }}
 
-      - name: Generate artifact timestamp
-        if: always()
-        id: ts
+      - name: Stage packaged artifact
+        if: success()
         shell: bash
-        run: echo "value=$(date -u +'%Y%m%d-%H%M')" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          rm -rf .artifact-upload
+          mkdir -p .artifact-upload
+
+          find_packages() {
+            find build -type f \( \
+              -name 'UltraScan3-*-Linux-*.tar.xz' -o \
+              -name 'UltraScan3-*-macOS.pkg' -o \
+              -name 'UltraScan3-HPC-*-macOS-*.tar.gz' -o \
+              -name 'UltraScan3-*-Windows.exe' \
+            \)
+          }
+          package_count=$(find_packages | wc -l | tr -d ' ')
+
+          if [[ $package_count -ne 1 ]]; then
+            printf 'Expected exactly one packaged artifact, found %d:\n' "$package_count" >&2
+            find_packages >&2
+            exit 1
+          fi
+
+          package=$(find_packages)
+          cp "$package" .artifact-upload/
 
       - name: Upload artifact
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-${{ steps.ts.outputs.value }}
-          path: |
-            build/**/UltraScan3-*-Linux-*.tar.xz
-            build/**/UltraScan3-*-macOS.pkg
-            build/**/UltraScan3-HPC-*-macOS-*.tar.gz
-            build/**/UltraScan3-*-Windows.exe
-          if-no-files-found: warn
+          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
+          path: .artifact-upload/*
+          if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
 
   # ===========================================================================
@@ -515,18 +534,33 @@ jobs:
           path: ${{ runner.temp }}/us3-vcpkg-cache
           key: ${{ steps.vcpkg-cache-restore.outputs.cache-primary-key }}
 
-      - name: Generate artifact timestamp
-        if: always()
-        id: ts
+      - name: Stage packaged artifact
+        if: success()
         shell: bash
-        run: echo "value=$(date -u +'%Y%m%d-%H%M')" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          rm -rf .artifact-upload
+          mkdir -p .artifact-upload
+
+          find_packages() {
+            find build -type f -name 'UltraScan3-*-Linux-*.tar.xz'
+          }
+          package_count=$(find_packages | wc -l | tr -d ' ')
+
+          if [[ $package_count -ne 1 ]]; then
+            printf 'Expected exactly one packaged artifact, found %d:\n' "$package_count" >&2
+            find_packages >&2
+            exit 1
+          fi
+
+          package=$(find_packages)
+          cp "$package" .artifact-upload/
 
       - name: Upload artifact
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8-${{ steps.ts.outputs.value }}
-          path: |
-            build/**/UltraScan3-*-Linux-*.tar.xz
-          if-no-files-found: warn
+          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8-attempt-${{ github.run_attempt }}
+          path: .artifact-upload/*
+          if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
