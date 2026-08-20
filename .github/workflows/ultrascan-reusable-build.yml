@@ -66,8 +66,10 @@
 #
 # artifact_name_prefix  (optional)
 #                 Prefix used when uploading packaged build artifacts.
-#                 The reusable workflow appends the runner/platform name.
-#                 Final name: "<artifact_name_prefix>-<runner>"
+# artifact_platform_label (optional)
+#                 User-facing platform and architecture appended to the prefix.
+#                 Falls back to the runner label for callers not yet supplying it.
+#                 Final name: "<artifact_name_prefix>-<platform-architecture>"
 #                 Callers should put stable build identity (version, run, SHA)
 #                 in the prefix rather than relying on a wall-clock timestamp.
 #
@@ -157,6 +159,12 @@ on:
         required: false
         type: string
         default: ultrascan
+
+      artifact_platform_label:
+        description: "User-facing platform and architecture label (for example Windows-x86_64)"
+        required: false
+        type: string
+        default: ""
 
       artifact_retention_days:
         description: Days to retain uploaded artifacts
@@ -408,7 +416,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}
+          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.artifact_platform_label || inputs.runner }}
           path: .artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
@@ -558,7 +566,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8
+          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.artifact_platform_label || 'oraclelinux8' }}
           path: .artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
