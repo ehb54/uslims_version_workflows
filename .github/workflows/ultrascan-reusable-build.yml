@@ -66,10 +66,8 @@
 #
 # artifact_name_prefix  (optional)
 #                 Prefix used when uploading packaged build artifacts.
-#                 The reusable workflow appends the runner/platform name and
-#                 run attempt so rerunning a workflow cannot collide with its
-#                 immutable artifacts from an earlier attempt.
-#                 Final name: "<artifact_name_prefix>-<runner>-attempt-<n>"
+#                 The reusable workflow appends the runner/platform name.
+#                 Final name: "<artifact_name_prefix>-<runner>"
 #                 Callers should put stable build identity (version, run, SHA)
 #                 in the prefix rather than relying on a wall-clock timestamp.
 #
@@ -410,7 +408,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}-attempt-${{ github.run_attempt }}
+          name: ${{ inputs.artifact_name_prefix }}-${{ inputs.runner }}
           path: .artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
@@ -560,7 +558,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8-attempt-${{ github.run_attempt }}
+          name: ${{ inputs.artifact_name_prefix }}-oraclelinux8
           path: .artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
