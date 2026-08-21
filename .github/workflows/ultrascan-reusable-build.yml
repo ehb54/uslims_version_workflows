@@ -229,7 +229,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
           restore-keys: |
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-
             vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-
@@ -278,7 +278,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
 
       - name: Restore vcpkg binary cache (Windows) — retry 2
         if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r1-fetch.outputs.cache-hit != 'true'
@@ -291,7 +291,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-${{ inputs.cache_os_label || inputs.runner }}-${{ inputs.qt_variant }}-${{ inputs.profile }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
 
       - name: Enforce exact cache hit (Windows)
         if: runner.os == 'Windows' && inputs.require_exact_cache_hit && steps.vcpkg-cache-restore-windows.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r1-fetch.outputs.cache-hit != 'true' && steps.vcpkg-cache-restore-windows-r2-fetch.outputs.cache-hit != 'true'
