@@ -390,8 +390,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .artifact-upload
-          mkdir -p .artifact-upload
+          rm -rf artifact-upload
+          mkdir -p artifact-upload
 
           find_packages() {
             find build -type f \( \
@@ -410,14 +410,14 @@ jobs:
           fi
 
           package=$(find_packages)
-          cp "$package" .artifact-upload/
+          cp "$package" artifact-upload/
 
       - name: Upload artifact
         if: success()
         uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact_name_prefix }}-${{ inputs.artifact_platform_label || inputs.runner }}
-          path: .artifact-upload/*
+          path: artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
 
@@ -545,8 +545,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .artifact-upload
-          mkdir -p .artifact-upload
+          rm -rf artifact-upload
+          mkdir -p artifact-upload
 
           find_packages() {
             find build -type f -name 'UltraScan3-*-Linux-*.tar.xz'
@@ -560,13 +560,13 @@ jobs:
           fi
 
           package=$(find_packages)
-          cp "$package" .artifact-upload/
+          cp "$package" artifact-upload/
 
       - name: Upload artifact
         if: success()
         uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact_name_prefix }}-${{ inputs.artifact_platform_label || 'oraclelinux8' }}
-          path: .artifact-upload/*
+          path: artifact-upload/*
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
