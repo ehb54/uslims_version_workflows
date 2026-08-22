@@ -1,8 +1,7 @@
 # Reusable UltraScan3 package build.
 #
-# The repository build scripts own platform setup, vcpkg/CMake configuration,
-# compilation, and packaging. This workflow supplies GitHub Packages credentials
-# for vcpkg's native package-level binary cache and uploads exactly one package.
+# Build scripts own platform setup, compilation, and packaging. This workflow
+# restores/saves vcpkg filesystem binary caches and uploads exactly one package.
 
 name: UltraScan3 Reusable Build
 
@@ -44,7 +43,7 @@ on:
         type: string
         default: ultrascan
       artifact_platform_label:
-        description: "User-facing platform and architecture label"
+        description: User-facing platform and architecture label
         required: false
         type: string
         default: ""
@@ -54,19 +53,24 @@ on:
         type: number
         default: 7
       require_exact_cache_hit:
-        description: "Deprecated compatibility input; vcpkg restores packages by ABI"
+        description: Fail before building unless the standard cache is an exact hit
         required: false
         type: boolean
         default: false
       save_cache:
-        description: "Deprecated compatibility input; vcpkg publishes completed packages immediately"
+        description: Save the standard cache after a successful build
         required: false
         type: boolean
         default: true
+      windows_split_cache:
+        description: Restore the pre-warmed Windows A and B cache partitions read-only
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  packages: write
+  actions: write
 
 jobs:
   build:
@@ -81,6 +85,61 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
+      - name: Define vcpkg cache keys
+        id: cache-keys
+        shell: bash
+        env:
+          CACHE_OS: ${{ inputs.cache_os_label || runner.os }}
+          CACHE_ARCH: ${{ runner.arch }}
+          QT_VARIANT: ${{ inputs.qt_variant }}
+          PROFILE: ${{ inputs.profile }}
+          FINGERPRINT: ${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**', 'admin/cmake/toolchain.cmake', 'scripts/warm-cache.sh', 'scripts/warm-cache-windows.ps1') }}
+        run: |
+          set -euo pipefail
+          cache_os=$(printf '%s' "$CACHE_OS" | tr '[:upper:]' '[:lower:]')
+          cache_arch=$(printf '%s' "$CACHE_ARCH" | tr '[:upper:]' '[:lower:]')
+          prefix="vcpkg-${cache_os}-${cache_arch}-${QT_VARIANT}-${PROFILE}"
+          {
+            echo "prefix=${prefix}"
+            echo "primary=${prefix}-${FINGERPRINT}"
+            echo "partition-a=${prefix}-a-${FINGERPRINT}"
+            echo "partition-b=${prefix}-b-${FINGERPRINT}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Delete requested standard cache
+        if: inputs.clean_tier == 'clean-purge-cache' && inputs.windows_split_cache == false
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_KEY: ${{ steps.cache-keys.outputs.primary }}
+        run: gh cache delete "$CACHE_KEY" --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Restore standard vcpkg binary cache
+        if: inputs.windows_split_cache == false
+        id: cache-standard
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: ${{ steps.cache-keys.outputs.primary }}
+          restore-keys: ${{ inputs.clean_tier == 'clean-purge-cache' && '' || format('{0}-', steps.cache-keys.outputs.prefix) }}
+          fail-on-cache-miss: ${{ inputs.require_exact_cache_hit }}
+
+      - name: Restore Windows vcpkg cache partition A
+        if: runner.os == 'Windows' && inputs.windows_split_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}\us3-vcpkg-cache-a
+          key: ${{ steps.cache-keys.outputs.partition-a }}
+          fail-on-cache-miss: true
+
+      - name: Restore Windows vcpkg cache partition B
+        if: runner.os == 'Windows' && inputs.windows_split_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}\us3-vcpkg-cache-b
+          key: ${{ steps.cache-keys.outputs.partition-b }}
+          fail-on-cache-miss: true
+
       - name: Ensure build scripts are executable
         if: runner.os != 'Windows'
         shell: bash
@@ -91,13 +150,11 @@ jobs:
         shell: bash
         env:
           CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
           US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
-          US3_VCPKG_NUGET_SOURCE: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          US3_VCPKG_NUGET_USER: ${{ github.repository_owner }}
-          US3_VCPKG_NUGET_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p "$US3_VCPKG_DOWNLOADS"
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
           args=("${{ inputs.profile }}" "--${{ inputs.qt_variant }}" "--pkg")
           case "${{ inputs.clean_tier }}" in
             incremental) ;;
@@ -113,11 +170,12 @@ jobs:
         shell: pwsh
         env:
           CI: "true"
-          US3_VCPKG_NUGET_SOURCE: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          US3_VCPKG_NUGET_USER: ${{ github.repository_owner }}
-          US3_VCPKG_NUGET_TOKEN: ${{ github.token }}
+          US3_VCPKG_CACHE: ${{ inputs.windows_split_cache && format('{0}\us3-vcpkg-cache-b', runner.temp) || format('{0}\us3-vcpkg-cache', runner.temp) }}
+          US3_VCPKG_DOWNLOADS: ${{ runner.temp }}\us3-vcpkg-downloads
+          VCPKG_BINARY_SOURCES: ${{ inputs.windows_split_cache && format('clear;files,{0}\us3-vcpkg-cache-a,read;files,{0}\us3-vcpkg-cache-b,read', runner.temp) || '' }}
         run: |
           $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_CACHE, $env:US3_VCPKG_DOWNLOADS | Out-Null
           $BuildArgs = @("${{ inputs.profile }}", "--${{ inputs.qt_variant }}", "--pkg")
           switch ("${{ inputs.clean_tier }}") {
             "incremental" { }
@@ -126,10 +184,15 @@ jobs:
             "clean-purge-cache" { $BuildArgs += "--clean"; $BuildArgs += "--purge-cache" }
             default { throw "Unknown clean_tier: ${{ inputs.clean_tier }}" }
           }
-          $env:US3_VCPKG_DOWNLOADS = Join-Path $HOME "vcpkg-downloads"
-          New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_DOWNLOADS | Out-Null
           & scripts\build.bat @BuildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save standard vcpkg binary cache
+        if: success() && inputs.windows_split_cache == false && inputs.save_cache && steps.cache-standard.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: ${{ steps.cache-keys.outputs.primary }}
 
       - name: Stage packaged artifact
         shell: bash
@@ -170,7 +233,6 @@ jobs:
       image: oraclelinux:8
     timeout-minutes: 360
     steps:
-      # checkout needs Git so build metadata is available inside the container.
       - name: Install Git for metadata-aware checkout
         shell: bash
         run: dnf install -y git
@@ -189,6 +251,29 @@ jobs:
           git rev-parse --verify HEAD
           git rev-list --count HEAD
 
+      - name: Define vcpkg cache key
+        id: cache-key
+        shell: bash
+        env:
+          FINGERPRINT: ${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**', 'admin/cmake/toolchain.cmake', 'scripts/warm-cache.sh') }}
+        run: echo "primary=vcpkg-oraclelinux8-x64-${{ inputs.qt_variant }}-${{ inputs.profile }}-${FINGERPRINT}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete requested vcpkg cache
+        if: inputs.clean_tier == 'clean-purge-cache'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
+        run: gh cache delete "$CACHE_KEY" --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: ${{ steps.cache-key.outputs.primary }}
+          restore-keys: ${{ inputs.clean_tier == 'clean-purge-cache' && '' || format('vcpkg-oraclelinux8-x64-{0}-{1}-', inputs.qt_variant, inputs.profile) }}
+          fail-on-cache-miss: ${{ inputs.require_exact_cache_hit }}
+
       - name: Ensure build scripts are executable
         shell: bash
         run: chmod +x scripts/build.sh scripts/bootstrap-linux.sh
@@ -197,13 +282,11 @@ jobs:
         shell: bash
         env:
           CI: "true"
+          US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
           US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
-          US3_VCPKG_NUGET_SOURCE: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          US3_VCPKG_NUGET_USER: ${{ github.repository_owner }}
-          US3_VCPKG_NUGET_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p "$US3_VCPKG_DOWNLOADS"
+          mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
           args=("${{ inputs.profile }}" "--${{ inputs.qt_variant }}" "--pkg")
           case "${{ inputs.clean_tier }}" in
             incremental) ;;
@@ -214,6 +297,13 @@ jobs:
           esac
           bash scripts/build.sh "${args[@]}"
 
+      - name: Save vcpkg binary cache
+        if: success() && inputs.save_cache
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: ${{ steps.cache-key.outputs.primary }}
+
       - name: Stage packaged artifact
         shell: bash
         run: |
@@ -221,8 +311,7 @@ jobs:
           rm -rf artifact-upload
           mkdir -p artifact-upload
           find_packages() {
-            find build -type f -not -path '*/_CPack_Packages/*' \
-              -name 'UltraScan3-*-Linux-*.tar.xz'
+            find build -type f -not -path '*/_CPack_Packages/*' -name 'UltraScan3-*-Linux-*.tar.xz'
           }
           package_count=$(find_packages | wc -l | tr -d ' ')
           if [[ $package_count -ne 1 ]]; then
