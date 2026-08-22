@@ -394,7 +394,7 @@ jobs:
           mkdir -p artifact-upload
 
           find_packages() {
-            find build -type f \( \
+            find build -type f -not -path '*/_CPack_Packages/*' \( \
               -name 'UltraScan3-*-Linux-*.tar.xz' -o \
               -name 'UltraScan3-*-macOS.pkg' -o \
               -name 'UltraScan3-HPC-*-macOS-*.tar.gz' -o \
@@ -437,11 +437,26 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      # The base Oracle Linux image has no Git. Without installing it before
+      # checkout, actions/checkout falls back to a source archive with no .git
+      # directory, and UltraScan is stamped as build 0 / unknown.
+      - name: Install Git for metadata-aware checkout
+        shell: bash
+        run: dnf install -y git
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
+
+      - name: Verify Git build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .git
+          git rev-parse --verify HEAD
+          git rev-list --count HEAD
 
       - name: Ensure build scripts are executable
         shell: bash
@@ -549,7 +564,8 @@ jobs:
           mkdir -p artifact-upload
 
           find_packages() {
-            find build -type f -name 'UltraScan3-*-Linux-*.tar.xz'
+            find build -type f -not -path '*/_CPack_Packages/*' \
+              -name 'UltraScan3-*-Linux-*.tar.xz'
           }
           package_count=$(find_packages | wc -l | tr -d ' ')
 
