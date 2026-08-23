@@ -62,6 +62,11 @@ on:
         required: false
         type: boolean
         default: true
+      vcpkg_build_jobs:
+        description: Limit dependency compilation without limiting the UltraScan build
+        required: false
+        type: number
+        default: 0
       windows_split_cache:
         description: Restore the pre-warmed Windows A and B cache partitions read-only
         required: false
@@ -152,6 +157,7 @@ jobs:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
           US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+          US3_VCPKG_JOBS: ${{ inputs.vcpkg_build_jobs || '' }}
         run: |
           set -euo pipefail
           mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
@@ -247,6 +253,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test -d .git
           git rev-parse --verify HEAD
           git rev-list --count HEAD
@@ -284,6 +291,7 @@ jobs:
           CI: "true"
           US3_VCPKG_CACHE: ${{ runner.temp }}/us3-vcpkg-cache
           US3_VCPKG_DOWNLOADS: ${{ runner.temp }}/us3-vcpkg-downloads
+          US3_VCPKG_JOBS: ${{ inputs.vcpkg_build_jobs || '' }}
         run: |
           set -euo pipefail
           mkdir -p "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS"
