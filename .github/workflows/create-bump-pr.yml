@@ -1,14 +1,14 @@
 name: Create Bump Version PR
 
 # This workflow automates the creation of bump-to-version pull requests.
-# It creates a new branch (bump-to-v<version>), updates the VERSION file,
-# commits the change, and opens a PR to main.
+# It creates a new branch (bump-to-v<version>), updates the repository's version
+# files, commits the changes, and opens a PR to main.
 #
 # Behavior:
-# - If VERSION already matches the requested version → exits successfully (no-op)
+# - If all managed version files already match the requested version → exits successfully (no-op)
 # - If an open PR already exists for this version → exits successfully (no-op)
 # - If the bump-to branch exists but no PR exists → creates PR from existing branch
-# - If the bump-to branch doesn't exist → creates branch, updates VERSION, and creates PR
+# - If the bump-to branch doesn't exist → creates branch, updates version files, and creates PR
 # - Supports standard versions (1.2.3) and pre-release versions (1.2.3-RC1)
 # - Fails if a tag for this version already exists
 # - Tracks who requested the bump and provides traceability
@@ -65,10 +65,15 @@ jobs:
             fi
           fi
 
-          # ultrascan3-only: require utils/us_defines.h to match too
+          # ultrascan3-only: require utils/us_defines.h and vcpkg.json to match too
           if [ "${GITHUB_REPOSITORY}" = "ehb54/ultrascan3" ]; then
             if [ ! -f utils/us_defines.h ]; then
               echo "Error: utils/us_defines.h not found in ehb54/ultrascan3"
+              exit 1
+            fi
+
+            if [ ! -f vcpkg.json ]; then
+              echo "Error: vcpkg.json not found in ehb54/ultrascan3"
               exit 1
             fi
 
@@ -76,6 +81,11 @@ jobs:
               | sed -E 's/.*QString\("([^"]*)"\).*/\1/' | head -n 1 | tr -d '\r\n')"
 
             if [ "${CURRENT_DEFINE:-}" != "${{ inputs.version }}" ]; then
+              SKIP=false
+            fi
+
+            CURRENT_VCPKG_VERSION="$(jq -r '.version // empty' vcpkg.json | tr -d '\r\n')"
+            if [ "${CURRENT_VCPKG_VERSION:-}" != "${{ inputs.version }}" ]; then
               SKIP=false
             fi
           fi
@@ -146,10 +156,15 @@ jobs:
           echo "${{ inputs.version }}" > VERSION
           git add VERSION
 
-          # ultrascan3-only: keep US_Version in sync with VERSION
+          # ultrascan3-only: keep US_Version and vcpkg.json in sync with VERSION
           if [ "${GITHUB_REPOSITORY}" = "ehb54/ultrascan3" ]; then
             if [ ! -f utils/us_defines.h ]; then
               echo "Error: utils/us_defines.h not found in ehb54/ultrascan3"
+              exit 1
+            fi
+
+            if [ ! -f vcpkg.json ]; then
+              echo "Error: vcpkg.json not found in ehb54/ultrascan3"
               exit 1
             fi
 
@@ -160,7 +175,17 @@ jobs:
             fi
 
             perl -0777 -i -pe 's/^(\s*#define\s+US_Version\s+QString\(")[^"]*("\).*)$/${1}'"${{ inputs.version }}"'${2}/m' utils/us_defines.h
-            git add utils/us_defines.h
+
+            VCPKG_VERSION_COUNT="$(grep -cE '^  "version": "[^"]*",$' vcpkg.json || true)"
+            if [ "$VCPKG_VERSION_COUNT" -ne 1 ]; then
+              echo "Error: expected exactly 1 top-level version field in vcpkg.json, found $VCPKG_VERSION_COUNT"
+              exit 1
+            fi
+
+            perl -0777 -i -pe 's/^(  "version": ")[^"]*(",)$/${1}'"${{ inputs.version }}"'${2}/m' vcpkg.json
+            jq -e . vcpkg.json > /dev/null
+
+            git add utils/us_defines.h vcpkg.json
           fi
 
       - name: Commit version bump
